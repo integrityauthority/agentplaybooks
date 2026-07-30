@@ -2,7 +2,7 @@
  * Database Connection Factory
  * 
  * Creates a Drizzle ORM instance based on the configured dialect.
- * Supports PostgreSQL (default, Supabase-compatible) and MSSQL (enterprise).
+ * Supports PostgreSQL (default, Supabase-compatible) and Microsoft SQL Server.
  * 
  * Configuration via environment variables:
  *   DB_DIALECT=postgres|mssql  (default: postgres)
@@ -13,11 +13,31 @@
  */
 
 import { drizzle as drizzlePg } from "drizzle-orm/node-postgres";
-import * as schema from "./schema";
+import { drizzle as drizzleMsSql } from "drizzle-orm/node-mssql";
+import * as postgresSchema from "./schema";
+import * as mssqlSchema from "./schema/mssql";
 
-export type DbInstance = ReturnType<typeof createDb>;
+export type DatabaseDialect = "postgres" | "mssql";
+
+type PostgresDb = ReturnType<typeof createPostgresDb>;
+export type DbInstance = PostgresDb;
 
 let _db: DbInstance | null = null;
+
+export function getDatabaseDialect(
+  configuredDialect = process.env.DB_DIALECT,
+): DatabaseDialect {
+  const dialect = configuredDialect?.trim().toLowerCase() || "postgres";
+  if (dialect === "postgres" || dialect === "postgresql") {
+    return "postgres";
+  }
+  if (dialect === "mssql" || dialect === "sqlserver") {
+    return "mssql";
+  }
+  throw new Error(
+    `Unsupported DB_DIALECT "${configuredDialect}". Expected "postgres" or "mssql".`,
+  );
+}
 
 /**
  * Get the database connection URL.
@@ -29,6 +49,12 @@ let _db: DbInstance | null = null;
 function getDatabaseUrl(): string {
   if (process.env.DATABASE_URL) {
     return process.env.DATABASE_URL;
+  }
+
+  if (getDatabaseDialect() === "mssql") {
+    throw new Error(
+      "DATABASE_URL is required when DB_DIALECT=mssql.",
+    );
   }
 
   // Fallback: derive from Supabase project URL
@@ -50,20 +76,32 @@ function getDatabaseUrl(): string {
 }
 
 /**
- * Create a new Drizzle ORM instance.
- * Uses the configured dialect (postgres or mssql).
+ * The public schema has the PostgreSQL type shape for backwards compatibility
+ * with the routes already migrated to Drizzle. At runtime it contains genuine
+ * MSSQL table objects when DB_DIALECT=mssql, so the MSSQL query builder receives
+ * the correct column metadata.
  */
-export function createDb() {
-  const dialect = process.env.DB_DIALECT || "postgres";
+export const schema = (
+  getDatabaseDialect() === "mssql" ? mssqlSchema : postgresSchema
+) as unknown as typeof postgresSchema;
 
-  if (dialect === "mssql") {
-    throw new Error("MSSQL dialect requires external driver implementation in this version.");
-  }
-
+function createPostgresDb() {
   return drizzlePg({
     connection: { connectionString: getDatabaseUrl() },
-    schema,
   });
+}
+
+function createMsSqlDb(): DbInstance {
+  return drizzleMsSql(getDatabaseUrl()) as unknown as DbInstance;
+}
+
+/**
+ * Create a new Drizzle ORM instance using the configured database dialect.
+ */
+export function createDb(): DbInstance {
+  return getDatabaseDialect() === "mssql"
+    ? createMsSqlDb()
+    : createPostgresDb();
 }
 
 /**
@@ -77,5 +115,6 @@ export function getDb(): DbInstance {
   return _db;
 }
 
-// Re-export schema for convenient imports
-export { schema };
+export function resetDbForTests(): void {
+  _db = null;
+}

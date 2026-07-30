@@ -68,6 +68,50 @@ Set redirect URLs to `https://your-domain.pages.dev/*`
 
 For running on your own servers.
 
+### Microsoft SQL Server database
+
+The repository contains a dedicated SQL Server 2022 Compose stack and a
+separate Drizzle migration history. Copy the example environment first:
+
+```bash
+cp .env.mssql.example .env
+```
+
+Set a strong `MSSQL_SA_PASSWORD` and a 64-character hexadecimal
+`SECRETS_ENCRYPTION_KEY`, then start the stack:
+
+```bash
+docker compose -f docker-compose.mssql.yml up --build
+```
+
+The stack performs three ordered operations:
+
+1. starts SQL Server and waits for its health check;
+2. creates the configured database if it does not exist;
+3. applies pending migrations before starting AgentPlaybooks.
+
+For a database outside Docker, use:
+
+```bash
+export DB_DIALECT=mssql
+export DATABASE_URL='Server=sql.example.internal,1433;Database=agentplaybooks;User Id=agentplaybooks;Password=...;Encrypt=true;TrustServerCertificate=false;'
+npm run db:migrate:mssql:runtime
+npm run db:smoke:mssql
+```
+
+Schema changes are generated independently for each supported database:
+
+```bash
+npm run db:generate:postgres
+npm run db:generate:mssql
+```
+
+> **Current limitation:** the SQL Server schema, connection, migration and
+> smoke-test layer are available, but the ongoing Supabase Data API migration
+> must be completed before every application endpoint can use SQL Server.
+> Authentication is intentionally unchanged in this phase and still uses
+> Supabase Auth.
+
 ### docker-compose.yml
 
 ```yaml
@@ -126,6 +170,12 @@ While optimized for Cloudflare, the app works on Vercel too.
 **Note:** Some Cloudflare-specific features won't work on Vercel.
 
 ## Database Migrations
+
+### Microsoft SQL Server
+
+Committed SQL Server migrations live under `drizzle/mssql`. Production
+deployments should run `npm run db:migrate:mssql:runtime`; do not use
+`drizzle-kit push` against production databases.
 
 ### Initial Setup
 
@@ -228,4 +278,3 @@ supabase db dump > backup.sql
 - [ ] RLS is enabled on all tables
 - [ ] Auth providers configured with correct redirect URLs
 - [ ] Custom domain uses HTTPS
-
