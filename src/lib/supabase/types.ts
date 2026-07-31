@@ -102,8 +102,29 @@ export type MCPServersRow = {
   description: string | null;
   tools: McpTool[];
   resources: McpResource[];
-  transport_type?: "stdio" | "http" | "sse" | null;
+  transport_type?: "stdio" | "http" | "sse" | "openapi" | null;
   transport_config?: Record<string, unknown>;
+  created_at: string;
+};
+
+export type MCPServerSecretRow = {
+  mcp_server_id: string;
+  encrypted_payload: string;
+  iv: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type MCPProxyAuditLogRow = {
+  id: string;
+  playbook_id: string;
+  mcp_server_id: string;
+  operation: string;
+  target: string | null;
+  status: "success" | "error";
+  latency_ms: number;
+  error_code: string | null;
+  request_id: string | null;
   created_at: string;
 };
 
@@ -122,12 +143,14 @@ export type CanvasSection = {
 export type CanvasRow = {
   id: string;
   playbook_id: string;
+  run_id: string;
   name: string;
   slug: string;
   content: string;
   sections: CanvasSection[];
   metadata: Record<string, unknown>;
   sort_order: number;
+  version: number;
   created_at: string;
   updated_at: string;
 };
@@ -139,6 +162,20 @@ export type MemoryTier = 'working' | 'contextual' | 'longterm';
 export type RetentionPolicy = 'permanent' | 'session' | 'auto';
 export type MemoryType = 'flat' | 'hierarchical';
 export type MemoryStatus = 'pending' | 'running' | 'completed' | 'failed' | 'blocked';
+
+export type PlaybookRunsRow = {
+  id: string;
+  playbook_id: string;
+  created_by: string | null;
+  name: string;
+  status: "active" | "completed" | "archived";
+  context: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PlaybookRunsInsert = Partial<PlaybookRunsRow>;
+export type PlaybookRunsUpdate = Partial<PlaybookRunsRow>;
 
 export type MemoriesRow = {
   id: string;
@@ -388,10 +425,28 @@ export interface Database {
         Update: MCPServersUpdate;
         Relationships: [];
       };
+      mcp_server_secrets: {
+        Row: MCPServerSecretRow;
+        Insert: Omit<MCPServerSecretRow, "created_at" | "updated_at"> & { created_at?: string; updated_at?: string };
+        Update: Partial<Omit<MCPServerSecretRow, "mcp_server_id" | "created_at">>;
+        Relationships: [];
+      };
+      mcp_proxy_audit_logs: {
+        Row: MCPProxyAuditLogRow;
+        Insert: Omit<MCPProxyAuditLogRow, "id" | "created_at"> & { id?: string; created_at?: string };
+        Update: Partial<Omit<MCPProxyAuditLogRow, "id" | "created_at">>;
+        Relationships: [];
+      };
       canvas: {
         Row: CanvasRow;
         Insert: CanvasInsert;
         Update: CanvasUpdate;
+        Relationships: [];
+      };
+      playbook_runs: {
+        Row: PlaybookRunsRow;
+        Insert: PlaybookRunsInsert;
+        Update: PlaybookRunsUpdate;
         Relationships: [];
       };
       memories: {
@@ -445,6 +500,7 @@ export type PlaybookCollaborator = Database["public"]["Tables"]["playbook_collab
 export type Skill = Database["public"]["Tables"]["skills"]["Row"];
 export type MCPServer = Database["public"]["Tables"]["mcp_servers"]["Row"];
 export type Canvas = Database["public"]["Tables"]["canvas"]["Row"];
+export type PlaybookRun = Database["public"]["Tables"]["playbook_runs"]["Row"];
 export type Memory = Database["public"]["Tables"]["memories"]["Row"];
 export type ApiKey = Database["public"]["Tables"]["api_keys"]["Row"];
 export type UserApiKey = Database["public"]["Tables"]["user_api_keys"]["Row"];
