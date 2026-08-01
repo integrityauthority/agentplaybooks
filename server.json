@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "ai.agentplaybooks/agentplaybooks",
   "title": "AgentPlaybooks",
-  "description": "Vendor-neutral, portable home for AI agent playbooks: keep skills, MCP servers, personas, memory, and project instructions in sync across platforms without vendor lock-in.",
+  "description": "Portable, vendor-neutral home for agent skills, MCP servers, personas, and memory.",
   "version": "0.2.0",
   "websiteUrl": "https://agentplaybooks.ai",
   "repository": {
