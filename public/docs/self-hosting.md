@@ -21,11 +21,10 @@ Deploy AgentPlaybooks on your own infrastructure.
 > [self-hosted Supabase stack](https://supabase.com/docs/guides/self-hosting/docker)
 > and point `NEXT_PUBLIC_SUPABASE_URL` at it. The application needs no changes.
 >
-> **3. The bundled `docker-compose.yml` Postgres service does not work.** It
-> mounts `supabase/migrations` into a vanilla `postgres:16-alpine`
-> `docker-entrypoint-initdb.d`, but those files call `auth.uid()` and
-> `extensions.uuid_generate_v4()`, which do not exist outside the Supabase
-> stack. Initialisation errors out.
+> **3. A bare PostgreSQL container will not do.** `docker-compose.yml` used to
+> ship one; it was removed because the application never queried it, and its
+> init step fed Supabase migrations calling `auth.uid()` into a vanilla
+> `postgres:16-alpine`, which errors out. Run the full Supabase stack instead.
 
 ## Prerequisites
 
@@ -111,51 +110,26 @@ equivalent. If you need an on-premise database today, run the
 [self-hosted Supabase stack](https://supabase.com/docs/guides/self-hosting/docker)
 instead — the application works against it unchanged.
 
-### docker-compose.yml
+### docker-compose.yml and Dockerfile
 
-```yaml
-version: '3.8'
+Both live in the repository root; this guide does not duplicate them, so they
+cannot drift out of date here.
 
-services:
-  app:
-    build: .
-    ports:
-      - "3000:3000"
-    environment:
-      - NEXT_PUBLIC_SUPABASE_URL=${SUPABASE_URL}
-      - NEXT_PUBLIC_SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
-      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
-    restart: unless-stopped
-```
+`docker-compose.yml` runs the application only. It deliberately does **not**
+ship a PostgreSQL service: the app talks to the Supabase Data API and Auth, not
+to a database directly, so a bare Postgres container would not serve it. Point
+`NEXT_PUBLIC_SUPABASE_URL` at either a hosted project or your own self-hosted
+Supabase stack.
 
-### Dockerfile
-
-```dockerfile
-FROM node:20-alpine AS builder
-
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci
-COPY . .
-RUN npm run build
-
-FROM node:20-alpine AS runner
-WORKDIR /app
-
-ENV NODE_ENV production
-
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static ./.next/static
-COPY --from=builder /app/public ./public
-
-EXPOSE 3000
-CMD ["node", "server.js"]
-```
+Note that `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` are
+build arguments as well as runtime variables — Next.js bakes them into the
+client bundle. They must be the values the *browser* can reach, and changing
+them requires a rebuild rather than a restart.
 
 ### Run
 
 ```bash
-docker-compose up -d
+docker compose up -d --build
 ```
 
 ## Option 3: Vercel
