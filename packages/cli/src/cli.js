@@ -8,12 +8,25 @@ import {
   listPlaybooks,
   planPull,
   planPush,
+  readLink,
   removeApiKey,
   resolveApiKey,
   resolveBaseUrl,
   saveApiKey,
   verifyApiKey,
 } from "./remote.js";
+import {
+  assertSecretName,
+  buildRunEnvironment,
+  createOrRotateSecret,
+  listVaultSecrets,
+  readManifestSecrets,
+  reconcileSecrets,
+  resolvePlaybookKey,
+  resolveSecretValue,
+  runWithEnvironment,
+  savePlaybookKey,
+} from "./secrets.js";
 
 const HELP = `AgentPlaybooks CLI
 
@@ -25,6 +38,10 @@ Usage:
   agentplaybooks playbooks [--url=<base>] [--json]
   agentplaybooks pull <id|guid> [path] [--apply] [--json] [--url=<base>]
   agentplaybooks push [path] [--apply] [--json] [--url=<base>]
+  agentplaybooks secrets login <guid> [--url=<base>]
+  agentplaybooks secrets status [path] [--json] [--url=<base>]
+  agentplaybooks secrets push <NAME> [--from-env=<VAR>] [--yes] [--url=<base>]
+  agentplaybooks secrets run [path] -- <command> [args...]
 
 Commands:
   doctor     Audit agent instructions, skills, MCP configuration, secrets, and drift.
@@ -40,27 +57,51 @@ Commands:
              .agents/skills and link the project to that playbook.
   push       Plan or apply uploading local skills and the manifest to the
              linked (or a new) remote playbook. Secret values are never sent.
+  secrets    Work with the playbook's encrypted vault. 'status' compares what
+             the playbook needs against the vault and this shell, 'push' stores
+             one value, and 'run' injects values into one child process.
+             Requires a playbook-scoped API key: 'secrets login <guid>'.
 
 Safety:
   doctor is read-only and local-only.
   sync, pull, and push are plan-only unless --apply is explicitly supplied.
   Conflicting definitions are reported and skipped, never overwritten.
+  Secret values are never written to disk, never printed, and never passed as
+  command-line arguments. 'secrets push' reads the value from stdin or from a
+  named environment variable and requires an explicit confirmation.
 `;
 
 function parse(args) {
   const command = args[0];
   const flags = new Map();
   const positional = [];
-  for (const arg of args.slice(1)) {
+  // Everything after a bare `--` belongs to the child command, not to us.
+  const separator = args.indexOf("--");
+  const own = separator === -1 ? args.slice(1) : args.slice(1, separator);
+  const rest = separator === -1 ? [] : args.slice(separator + 1);
+  for (const arg of own) {
     if (arg.startsWith("--")) {
-      const separator = arg.indexOf("=");
-      if (separator === -1) flags.set(arg, true);
-      else flags.set(arg.slice(0, separator), arg.slice(separator + 1));
+      const equals = arg.indexOf("=");
+      if (equals === -1) flags.set(arg, true);
+      else flags.set(arg.slice(0, equals), arg.slice(equals + 1));
     } else {
       positional.push(arg);
     }
   }
-  return { command, flags, positional };
+  return { command, flags, positional, rest };
+}
+
+async function confirm(question) {
+  if (!process.stdin.isTTY) {
+    throw new Error(`${question} Refusing to continue without an interactive confirmation; pass --yes if you mean it.`);
+  }
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const answer = await new Promise((resolve) => rl.question(`${question} Type 'yes' to continue: `, resolve));
+    return answer.trim().toLowerCase() === "yes";
+  } finally {
+    rl.close();
+  }
 }
 
 async function promptForKey(question) {
@@ -105,8 +146,129 @@ function printRemotePlan(kind, plan) {
   }
 }
 
+async function runSecrets(url, flags, positional, rest) {
+  const subcommand = positional[0];
+
+  if (subcommand === "login") {
+    const guid = positional[1];
+    if (!guid) throw new Error("Usage: agentplaybooks secrets login <playbook-guid>");
+    const key = process.env.AGENTPLAYBOOKS_PLAYBOOK_KEY
+      || await promptForKey(`Paste a playbook API key for ${guid} with secrets:read (apb_...): `);
+    if (!key.startsWith("apb_")) throw new Error("That does not look like a playbook API key (apb_...).");
+    await listVaultSecrets(url, guid, key);
+    await savePlaybookKey(url, guid, key);
+    console.log(`Stored a playbook key for ${guid}. It is scoped to that playbook only.`);
+    return;
+  }
+
+  // Argument shape is checked before any credential lookup: a typo should be
+  // reported as a typo, not as a missing key.
+  if (subcommand === "push") {
+    if (!positional[1]) throw new Error("Usage: agentplaybooks secrets push <NAME> [path] [--from-env=<VAR>]");
+    assertSecretName(positional[1]);
+  }
+  if (subcommand === "run" && rest.length === 0) {
+    throw new Error("Usage: agentplaybooks secrets run [path] -- <command> [args...]");
+  }
+
+  const root = path.resolve(
+    subcommand === "push" ? (positional[2] ?? process.cwd()) : (positional[1] ?? process.cwd()),
+  );
+  const link = await readLink(root);
+  const guid = typeof flags.get("--playbook") === "string" ? flags.get("--playbook") : link?.guid;
+  if (!guid) {
+    throw new Error("This project is not linked to a playbook. Run 'agentplaybooks pull <guid> --apply' first, or pass --playbook=<guid>.");
+  }
+  const playbookKey = await resolvePlaybookKey(url, guid);
+  if (!playbookKey) {
+    throw new Error(`No playbook key for ${guid}. Run 'agentplaybooks secrets login ${guid}', or set AGENTPLAYBOOKS_PLAYBOOK_KEY.`);
+  }
+
+  if (subcommand === "status") {
+    const [manifestSecrets, vaultSecrets] = await Promise.all([
+      readManifestSecrets(root),
+      listVaultSecrets(url, guid, playbookKey),
+    ]);
+    const rows = reconcileSecrets(manifestSecrets, vaultSecrets, process.env);
+    if (flags.has("--json")) {
+      console.log(JSON.stringify(rows, null, 2));
+      return;
+    }
+    if (rows.length === 0) {
+      console.log("This playbook declares no secrets and the vault is empty.");
+      return;
+    }
+    console.log(`Secrets for playbook ${guid} (values are never shown):`);
+    for (const row of rows) {
+      const state = [
+        row.inEnvironment ? "set in this shell" : "not set here",
+        row.inVault ? (row.revealable ? "in vault (revealable)" : "in vault (proxy only)") : "not in vault",
+        ...(row.vaultOnly ? ["not referenced by the playbook"] : []),
+        ...(row.required ? [] : ["optional"]),
+      ].join(", ");
+      console.log(`  ${row.name}: ${state}`);
+    }
+    const missing = rows.filter((row) => row.required && !row.inEnvironment && !row.inVault);
+    if (missing.length > 0) {
+      console.log("");
+      console.log(`Needed but nowhere to be found: ${missing.map((row) => row.name).join(", ")}.`);
+      console.log("Store one with: <value source> | agentplaybooks secrets push NAME");
+    }
+    return;
+  }
+
+  if (subcommand === "push") {
+    const name = positional[1];
+    const fromEnv = typeof flags.get("--from-env") === "string" ? flags.get("--from-env") : null;
+    const { value, origin } = await resolveSecretValue({ fromEnv });
+    const vaultSecrets = await listVaultSecrets(url, guid, playbookKey);
+    const existing = vaultSecrets.find((secret) => secret.name === name);
+
+    console.log(`About to store a secret in the playbook vault at ${url}:`);
+    console.log(`  playbook: ${guid}`);
+    console.log(`  name:     ${name}`);
+    console.log(`  source:   ${origin} (${value.length} characters, not shown)`);
+    console.log(`  action:   ${existing ? "rotate the existing secret" : "create a new secret"}`);
+    console.log("The value is encrypted server-side and is not written to disk by this command.");
+    if (existing?.allow_api_key_reveal) {
+      console.log("Note: this secret has reveal enabled, so an API key with secrets:read can read the raw value.");
+    }
+
+    if (!flags.has("--yes") && !(await confirm("Store it?"))) {
+      console.log("Nothing was sent.");
+      return;
+    }
+    await createOrRotateSecret(url, guid, playbookKey, { name, value, existing: Boolean(existing) });
+    console.log(existing ? `Rotated ${name}.` : `Stored ${name}.`);
+    return;
+  }
+
+  if (subcommand === "run") {
+    const manifestSecrets = await readManifestSecrets(root);
+    const names = manifestSecrets.map((secret) => secret.name);
+    if (names.length === 0) {
+      console.log("The playbook declares no secrets; running the command unchanged.");
+    }
+    const { injected, skipped } = await buildRunEnvironment(url, guid, playbookKey, names);
+    const injectedNames = Object.keys(injected);
+    if (injectedNames.length > 0) {
+      console.log(`Injecting into the child process only: ${injectedNames.join(", ")}`);
+    }
+    for (const item of skipped) {
+      console.log(`  skipped ${item.name}: ${item.reason}`);
+    }
+    const [command, ...commandArgs] = rest;
+    const result = await runWithEnvironment(command, commandArgs, injected);
+    if (result.signal) throw new Error(`${command} was terminated by ${result.signal}.`);
+    process.exitCode = result.code;
+    return;
+  }
+
+  throw new Error("Usage: agentplaybooks secrets <login|status|push|run> ...");
+}
+
 export async function run(args) {
-  const { command, flags, positional } = parse(args);
+  const { command, flags, positional, rest } = parse(args);
   if (!command || flags.has("--help") || command === "help") {
     console.log(HELP);
     return;
@@ -156,6 +318,11 @@ export async function run(args) {
   }
 
   const url = resolveBaseUrl(typeof flags.get("--url") === "string" ? flags.get("--url") : undefined);
+
+  if (command === "secrets") {
+    await runSecrets(url, flags, positional, rest);
+    return;
+  }
 
   if (command === "login") {
     const apiKey = process.env.AGENTPLAYBOOKS_API_KEY

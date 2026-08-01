@@ -121,7 +121,38 @@ konfigot ír a helyükre. Secret-értékek egyik irányban sem mozdulnak — lá
 lentebb. Self-hosted telepítéshez használd a `--url=<base>` kapcsolót vagy az
 `AGENTPLAYBOOKS_URL` változót.
 
-## Secretek: a playbook a szerződést hordozza, nem a hitelesítőadatot
+## Secretek: egyetlen plaintext érték sem kerül a lemezre
+
+```bash
+apb secrets login <guid>     # playbookra szűkített kulcs, 0600-as jogokkal tárolva
+apb secrets status           # mi kell, mi van a vaultban, mi van ebben a shellben
+pass show deploy/api | apb secrets push DEPLOY_API_KEY
+apb secrets run -- npm run deploy
+```
+
+- A **`status`** csak neveket és állapotot ír ki: mire van szüksége a
+  playbooknak, mi van a vaultban, mit jelölt a tulajdonos felfedhetőnek, mi van
+  már beállítva a shellodben. Értéket soha.
+- A **`push`** az értéket a standard bemenetről vagy a `--from-env=<VAR>`-ból
+  veszi — soha nem parancssori argumentumból, mert az argv bekerül a
+  shell-előzményekbe és a processzlistába. Kiírja a nevet, a cél playbookot és a
+  karakterszámot, majd megvárja, hogy beírd: `yes`. A már létező secretet a
+  helyén rotálja, a tulajdonos felfedhetőségi jelzését, a host-engedélylistát, a
+  kategóriát és a lejáratot érintetlenül hagyva.
+- A **`run`** a deklarált secreteket memóriába kéri le, egyetlen
+  gyerekfolyamatba injektálja, majd kilép. Semmi nem íródik ki sehová. Amit a
+  tulajdonos nem jelölt felfedhetőnek, az a vaultban marad, és kihagyottként
+  jelenik meg.
+- Ezek a parancsok **playbookra szűkített** API-kulcsot használnak a fiókszintű
+  kulcs helyett, így a secretekhez hozzáférő hitelesítőadat egyetlen playbookra
+  korlátozódik. Ha egyáltalán nem akarod tárolni, használd az
+  `AGENTPLAYBOOKS_PLAYBOOK_KEY` változót.
+
+Ha az ügynököd MCP-szerverként beszél a hosztolt playbookkal, mindebből semmire
+nincs szükséged: a `use_secret` eszközzel a platform szerveroldalon injektálja a
+hitelesítőadatot, így az érték az ügynök kontextusába sem kerül be.
+
+## A playbook a szerződést hordozza, nem a hitelesítőadatot
 
 A playbook kimondja, milyen hitelesítőadatokra van szüksége; az értékek ott
 maradnak, ahol lenniük kell. A `sync` az MCP-konfigurációban talált minden

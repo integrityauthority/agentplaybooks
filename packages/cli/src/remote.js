@@ -20,7 +20,7 @@ function credentialsPath(homedir = os.homedir()) {
   return path.join(homedir, ".agentplaybooks", "credentials.json");
 }
 
-async function loadCredentials(homedir) {
+export async function loadCredentials(homedir) {
   try {
     return JSON.parse(await readFile(credentialsPath(homedir), "utf8"));
   } catch (error) {
@@ -37,9 +37,14 @@ async function writePrivateJson(filePath, value) {
   await chmod(filePath, 0o600).catch(() => {});
 }
 
+export async function saveCredentials(credentials, homedir) {
+  await writePrivateJson(credentialsPath(homedir), credentials);
+}
+
 export async function saveApiKey(url, apiKey, homedir) {
   const credentials = await loadCredentials(homedir);
-  credentials.remotes[url] = { apiKey };
+  // Preserve any playbook-scoped keys stored for this remote.
+  credentials.remotes[url] = { ...(credentials.remotes[url] ?? {}), apiKey };
   await writePrivateJson(credentialsPath(homedir), credentials);
 }
 
@@ -57,7 +62,7 @@ export async function resolveApiKey(url, { env = process.env, homedir } = {}) {
   return credentials.remotes[url]?.apiKey ?? null;
 }
 
-async function request(url, requestPath, { method = "GET", apiKey, body, fetchImpl = fetch } = {}) {
+export async function request(url, requestPath, { method = "GET", apiKey, body, fetchImpl = fetch } = {}) {
   const response = await fetchImpl(`${url}${requestPath}`, {
     method,
     headers: {

@@ -81,9 +81,42 @@ node ./bin/agentplaybooks.js push --apply           # local -> remote playbook
 
 ## Secrets
 
-Secret values never enter the manifest and are never uploaded. Instead, `sync`
-collects the environment references it finds in MCP configuration (`${VAR}`,
-`$VAR`, `env:VAR`) into `spec.secrets`, so a playbook states what it needs:
+**A plaintext secret value never touches the disk.** Not in the manifest, not in
+a generated `.env`, not in `~/.agentplaybooks`. What the CLI stores is the
+requirement; what it moves is a value in memory, on request.
+
+```bash
+node ./bin/agentplaybooks.js secrets login <guid>     # store a playbook-scoped key
+node ./bin/agentplaybooks.js secrets status           # needs vs vault vs this shell
+pass show deploy/api | node ./bin/agentplaybooks.js secrets push DEPLOY_API_KEY
+node ./bin/agentplaybooks.js secrets run -- npm run deploy
+```
+
+- `secrets status` prints names and state only — which secrets the playbook
+  needs, which exist in the vault, whether the owner marked each one revealable,
+  and which are already set in your shell. It never prints a value.
+- `secrets push` reads the value from **stdin** or `--from-env=<VAR>`, never from
+  a command-line argument (argv lands in shell history and in the process list),
+  shows you the name, target playbook and character count, and requires you to
+  type `yes` before anything is sent. `--yes` skips the prompt for scripts. If
+  the secret already exists it is rotated, leaving the owner's reveal flag, host
+  allow-list, category and expiry untouched.
+- `secrets run -- <command>` fetches the values the playbook declares into
+  memory, injects them into that one child process, and exits. Nothing is
+  written anywhere. Secrets the owner has not marked revealable stay in the
+  vault and are reported as skipped rather than silently missing.
+- These commands use a **playbook-scoped** API key (`secrets login <guid>`),
+  not the account-wide key used by `push`/`pull`: the credential that can reach
+  secrets is limited to one playbook. Set `AGENTPLAYBOOKS_PLAYBOOK_KEY` to avoid
+  storing it at all.
+
+For anything that talks to the hosted playbook as an MCP server, you do not need
+any of this: the `use_secret` tool has the platform inject the credential
+server-side, so the value never enters the agent's context either.
+
+`sync` collects the environment references it finds in MCP configuration
+(`${VAR}`, `$VAR`, `env:VAR`) into `spec.secrets`, so a playbook states what it
+needs:
 
 ```json
 { "name": "DEPLOY_API_KEY", "ref": "env:DEPLOY_API_KEY", "required": true }

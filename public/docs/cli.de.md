@@ -121,7 +121,38 @@ zu schreiben. Geheimniswerte bewegen sich in keiner der beiden Richtungen —
 siehe unten. Für Self-Hosting nutzen Sie `--url=<base>` oder
 `AGENTPLAYBOOKS_URL`.
 
-## Secrets: Das Playbook trägt den Vertrag, nicht die Zugangsdaten
+## Secrets: Kein Klartextwert berührt jemals die Festplatte
+
+```bash
+apb secrets login <guid>     # ein auf ein Playbook beschränkter Schlüssel, 0600 gespeichert
+apb secrets status           # was benötigt wird vs. im Vault vs. in dieser Shell
+pass show deploy/api | apb secrets push DEPLOY_API_KEY
+apb secrets run -- npm run deploy
+```
+
+- **`status`** gibt ausschließlich Namen und Zustand aus: vom Playbook benötigt,
+  im Vault vorhanden, vom Eigentümer als offenlegbar markiert, in Ihrer Shell
+  bereits gesetzt. Niemals einen Wert.
+- **`push`** nimmt den Wert von stdin oder aus `--from-env=<VAR>` — nie aus einem
+  Kommandozeilenargument, denn argv landet in der Shell-History und in der
+  Prozessliste. Der Befehl zeigt den Namen, das Ziel-Playbook und die
+  Zeichenanzahl und verlangt dann, dass Sie `yes` eintippen. Ein bestehendes
+  Geheimnis wird an seiner Stelle rotiert; das Offenlegungs-Flag des Eigentümers,
+  die Host-Allowlist, die Kategorie und das Ablaufdatum bleiben unberührt.
+- **`run`** holt die deklarierten Geheimnisse in den Speicher, injiziert sie in
+  einen einzigen Kindprozess und beendet sich. Nichts wird irgendwohin
+  geschrieben. Geheimnisse, die der Eigentümer nicht als offenlegbar markiert
+  hat, bleiben im Vault und werden als übersprungen gemeldet.
+- Diese Befehle verwenden einen **auf ein Playbook beschränkten** API-Schlüssel
+  statt Ihres kontoweiten Schlüssels; damit sind die Zugangsdaten, die Geheimnisse
+  erreichen können, auf ein einziges Playbook begrenzt. Mit
+  `AGENTPLAYBOOKS_PLAYBOOK_KEY` speichern Sie ihn gar nicht.
+
+Spricht Ihr Agent mit dem gehosteten Playbook als MCP-Server, brauchen Sie davon
+nichts: Das Tool `use_secret` lässt die Plattform die Zugangsdaten serverseitig
+injizieren, sodass der Wert auch nicht in den Kontext des Agents gelangt.
+
+## Das Playbook trägt den Vertrag, nicht die Zugangsdaten
 
 Ein Playbook benennt, welche Zugangsdaten es braucht; die Werte bleiben dort,
 wo sie hingehören. `sync` sammelt jede Umgebungsreferenz, die es in Ihrer

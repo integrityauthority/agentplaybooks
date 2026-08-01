@@ -71,6 +71,23 @@ This document outlines the development roadmap for AgentPlaybooks - the first op
   - Who accessed what, when
   - Export logs for compliance
 
+- [ ] **Secrets for local stdio MCP servers** - The last gap in "pull and it works"
+  - A locally spawned MCP server (`npx some-mcp` with `env.API_KEY`) runs on the
+    user's machine, so the hosted `use_secret` proxy cannot help it
+  - `apb secrets run -- <command>` already injects values into one child process
+    without writing to disk; the remaining work is having a local agent client
+    launch its stdio servers through that path
+  - Deliberately not solved by writing a `.env` file: a credential on disk is the
+    thing we are trying to avoid
+
+- [ ] **One credential, one store** - Unify federation secrets with the vault
+  - Today `transport_config.auth.token_secret` resolves only from the per-server
+    `mcp_server_secrets` payload, so the same token can be needed in two places
+  - Plan: keep the per-server payload authoritative, then fall back to the
+    playbook vault by name — no migration, nothing existing breaks
+  - Also bring `mcp_server_secrets` up to the vault's crypto: HKDF-derived keys
+    and ciphertext bound to its server id, behind a version prefix
+
 ### Code Quality 📋
 
 - [ ] **Open Source Cleanup**

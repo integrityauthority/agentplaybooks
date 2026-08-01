@@ -124,7 +124,39 @@ de escribir una configuración a medio traducir. Los valores secretos no se
 mueven en ninguna dirección — ver más abajo. Para despliegues self-hosted usa
 `--url=<base>` o `AGENTPLAYBOOKS_URL`.
 
-## Secretos: el playbook lleva el contrato, no la credencial
+## Secretos: ningún valor en texto plano toca nunca el disco
+
+```bash
+apb secrets login <guid>     # una clave limitada a un playbook, guardada con 0600
+apb secrets status           # qué hace falta vs. qué hay en el vault vs. en esta shell
+pass show deploy/api | apb secrets push DEPLOY_API_KEY
+apb secrets run -- npm run deploy
+```
+
+- **`status`** solo imprime nombres y estado: lo que el playbook necesita, lo que
+  hay en el vault, lo que el propietario marcó como revelable, lo que ya tienes
+  definido en tu shell. Nunca un valor.
+- **`push`** toma el valor de la entrada estándar o de `--from-env=<VAR>` — nunca
+  de un argumento de línea de comandos, porque argv acaba en el historial de la
+  shell y en la lista de procesos. Muestra el nombre, el playbook de destino y el
+  número de caracteres, y luego te exige escribir `yes`. Un secreto existente se
+  rota en su sitio, dejando intactos el indicador de revelado del propietario, la
+  lista de hosts permitidos, la categoría y la caducidad.
+- **`run`** trae los secretos declarados a memoria, los inyecta en un único
+  proceso hijo y termina. No se escribe nada en ninguna parte. Los secretos que
+  el propietario no haya marcado como revelables se quedan en el vault y se
+  informan como omitidos.
+- Estos comandos usan una clave de API **limitada a un playbook** en lugar de tu
+  clave de cuenta, así que la credencial capaz de llegar a los secretos queda
+  restringida a un único playbook. Usa `AGENTPLAYBOOKS_PLAYBOOK_KEY` para no
+  guardarla en absoluto.
+
+Si tu agente habla con el playbook alojado como servidor MCP, no necesitas nada
+de esto: la herramienta `use_secret` hace que la plataforma inyecte la credencial
+en el lado del servidor, así que el valor tampoco entra en el contexto del
+agente.
+
+## El playbook lleva el contrato, no la credencial
 
 Un playbook declara qué credenciales necesita; los valores se quedan donde
 corresponde. `sync` recopila en `spec.secrets` todas las referencias de

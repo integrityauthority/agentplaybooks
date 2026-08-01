@@ -115,6 +115,16 @@ Safety rules:
   references discovered in local configuration, so a playbook declares what it
   needs to run without carrying a single credential. Hand-edited entries (a
   vault ref, `required: false`) win over discovery on later syncs.
+- No CLI command writes a plaintext secret value to disk. `secrets push` reads a
+  value from stdin or a named environment variable — never from argv, which is
+  visible in shell history and in the process list — and requires an explicit
+  typed confirmation. `secrets run` holds values in memory only, for the lifetime
+  of one child process. A generated `.env` was considered and rejected: a
+  credential at rest on a developer machine is the thing this design avoids.
+- Vault access uses a playbook-scoped API key rather than the account-wide user
+  key that `push`/`pull` use, so the credential that can reach secrets is limited
+  to one playbook. This also avoided widening the server's authorization model:
+  the secrets endpoints already accept exactly this credential.
 - Conflicts never silently use last-write-wins.
 - A robot configuration deployment does not authorize physical actuation.
 - Physical actions default to deny and require a separate runtime policy,

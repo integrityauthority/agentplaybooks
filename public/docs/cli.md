@@ -114,7 +114,35 @@ equivalent; `pull` reports them instead of writing a half-translated config.
 Secret values never move in either direction — see below. Use `--url=<base>`
 or `AGENTPLAYBOOKS_URL` for self-hosted deployments.
 
-## Secrets: the playbook carries the contract, not the credential
+## Secrets: no plaintext value ever touches the disk
+
+```bash
+apb secrets login <guid>     # a playbook-scoped key, stored 0600
+apb secrets status           # what's needed vs in the vault vs in this shell
+pass show deploy/api | apb secrets push DEPLOY_API_KEY
+apb secrets run -- npm run deploy
+```
+
+- **`status`** prints names and state only: needed by the playbook, present in
+  the vault, marked revealable by the owner, already set in your shell. Never a
+  value.
+- **`push`** takes the value from stdin or `--from-env=<VAR>` — never from a
+  command-line argument, because argv lands in shell history and in the process
+  list. It shows the name, the target playbook and the character count, then
+  requires you to type `yes`. An existing secret is rotated in place, leaving the
+  owner's reveal flag, host allow-list, category and expiry untouched.
+- **`run`** fetches the declared secrets into memory, injects them into one child
+  process, and exits. Nothing is written anywhere. Secrets the owner has not
+  marked revealable stay in the vault and are reported as skipped.
+- These commands use a **playbook-scoped** API key rather than your account-wide
+  key, so the credential that can reach secrets is limited to one playbook. Use
+  `AGENTPLAYBOOKS_PLAYBOOK_KEY` to avoid storing it at all.
+
+If your agent talks to the hosted playbook as an MCP server, you need none of
+this: the `use_secret` tool makes the platform inject the credential server-side,
+so the value never enters the agent's context either.
+
+## The playbook carries the contract, not the credential
 
 A playbook states which credentials it needs; the values stay where they
 belong. `sync` collects every environment reference it finds in your MCP

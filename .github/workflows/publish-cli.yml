@@ -1,16 +1,20 @@
 name: Publish CLI
 
-# Publishes packages/cli to npm as @agentplaybooks/cli.
+# Publishes packages/cli to npm as @agentplaybooks/cli using npm trusted
+# publishing (OIDC). No npm token is stored anywhere: GitHub mints a short-lived
+# identity token for this workflow, and npm verifies it against the trusted
+# publisher configured on the package. Provenance attestations are generated
+# automatically, so `--provenance` is not passed.
 #
-# Setup required once, by a maintainer with npm access:
-#   1. Create a granular npm access token scoped to the @agentplaybooks
-#      organization with read+write on @agentplaybooks/cli.
-#   2. Add it as the repository secret NPM_TOKEN.
+# One-time setup on npmjs.com, under the package's Settings → Trusted publisher:
+#   Organization or user: integrityauthority
+#   Repository:           agentplaybooks
+#   Workflow filename:    publish-cli.yml
+#   Allowed actions:      npm publish
 #
-# Prereleases publish under the `alpha` dist-tag so `npm install
-# @agentplaybooks/cli` keeps resolving to the newest stable version. The tag is
-# derived from the version in package.json, so a stable version publishes as
-# `latest` without editing this file.
+# Trusted publishing is configured per package, so the very first release has to
+# be pushed by a human (`npm publish ./packages/cli --access public --tag alpha
+# --otp=<code>`). Every release after that runs here.
 on:
   workflow_dispatch:
     inputs:
@@ -23,7 +27,7 @@ on:
 
 permissions:
   contents: read
-  id-token: write # required for npm provenance
+  id-token: write # lets GitHub mint the OIDC token npm verifies
 
 jobs:
   publish:
@@ -38,6 +42,19 @@ jobs:
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
+
+      # Trusted publishing needs npm >= 11.5.1. Node 24 ships a new enough npm
+      # today; failing loudly beats falling back to a tokenless publish attempt
+      # that would report a confusing auth error.
+      - name: Check npm supports trusted publishing
+        run: |
+          npm_version="$(npm --version)"
+          required="11.5.1"
+          if [ "$(printf '%s\n%s\n' "$required" "$npm_version" | sort -V | head -n1)" != "$required" ]; then
+            echo "npm $npm_version is older than $required; trusted publishing is unavailable." >&2
+            exit 1
+          fi
+          echo "npm $npm_version"
 
       # The CLI has no dependencies, so its tests run straight from the source.
       - run: node --test
@@ -67,6 +84,4 @@ jobs:
 
       - name: Publish
         if: github.event_name == 'push' || inputs.dry_run == false
-        run: npm publish --access public --provenance --tag ${{ steps.disttag.outputs.tag }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public --tag ${{ steps.disttag.outputs.tag }}

@@ -57,10 +57,10 @@ Substitute your variant for `apb` in the commands below.
 - **"Set this machine up from our team playbook"** → `apb pull <guid> --apply`,
   then `apb sync --apply`. If the project has no target yet, sync lists the
   agent tools it detected for this user; pass them via `--target`.
-- **"Which credentials does this playbook need?"** → read `spec.secrets` in
-  `agentplaybook.json`; it lists the environment references the configuration
-  mentions. Values are never stored there — tell the user which variables to
-  set, do not try to fetch or guess values.
+- **"Which credentials does this playbook need?"** → run
+  `apb secrets status --json` (or read `spec.secrets` in `agentplaybook.json` if
+  the project has no playbook key). It reports names and state only. Tell the
+  user which variables to set; never try to fetch, print, or guess a value.
 - **"Share our project rules with the team"** → the project-root instruction
   file travels with `push`. If `AGENTS.md` and `CLAUDE.md` disagree, `push`
   reports a conflict: ask which one is canonical, make the other a
@@ -81,6 +81,14 @@ Substitute your variant for `apb` in the commands below.
   environment over pasting keys into the terminal. `push` refuses to upload
   content that looks like it contains hard-coded credentials — fix the finding
   instead of working around it.
+- `apb secrets status` is safe to run. **Do not run `apb secrets push` for the
+  user**: storing a credential is theirs to confirm, and the command needs a
+  value on stdin that you must never hold or generate. Tell them the exact
+  command instead, e.g.
+  `pass show deploy/api | apb secrets push DEPLOY_API_KEY`.
+- `apb secrets run -- <command>` injects values into one child process and
+  writes nothing to disk. Prefer it over asking the user to export variables,
+  and never suggest writing secrets into `.env`, `.mcp.json`, or a skill.
 - Secret values never belong in `agentplaybook.json` or in pushed content;
   only environment/vault references are allowed. `spec.secrets` records which
   variables the configuration references, never their values.
