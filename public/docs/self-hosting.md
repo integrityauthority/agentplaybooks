@@ -96,14 +96,18 @@ For running on your own servers.
 ### Microsoft SQL Server
 
 SQL Server is **not supported**. An experimental Drizzle/SQL Server layer used
-to live here; it was removed because only two functions ever queried through it,
-so `DB_DIALECT=mssql` produced a split-brain deployment that started without
-error. The schema and migration work is preserved on the
-`feature/mssql-foundation` branch.
+to live here. It was removed because only two functions ever queried through
+it, so `DB_DIALECT=mssql` produced a split-brain deployment — the playbook list
+read from SQL Server while everything else, including all authorization checks,
+still read from Supabase — and it started without error.
 
-Supporting it properly means migrating every remaining Supabase Data API call
-and replacing Supabase Auth, since GoTrue has no SQL Server equivalent. If you
-need an on-premise database today, run the
+The schemas, migration and Compose stack remain in git history; the last commit
+before removal is `08cb203`, so `git checkout 08cb203 -- src/lib/db drizzle`
+brings them back.
+
+Supporting SQL Server properly means migrating every remaining Supabase Data
+API call and replacing Supabase Auth, since GoTrue has no SQL Server
+equivalent. If you need an on-premise database today, run the
 [self-hosted Supabase stack](https://supabase.com/docs/guides/self-hosting/docker)
 instead — the application works against it unchanged.
 
