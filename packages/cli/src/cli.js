@@ -29,7 +29,7 @@ Usage:
 Commands:
   doctor     Audit agent instructions, skills, MCP configuration, secrets, and drift.
   sync       Plan or apply the canonical manifest and missing platform files
-             for enabled targets (claude, cursor).
+             for enabled targets (claude, cursor, codex, antigravity, hermes).
   login      Store an AgentPlaybooks user API key (apb_...) for a remote.
              Reads AGENTPLAYBOOKS_API_KEY, or prompts on stdin.
   logout     Remove the stored API key for a remote.
@@ -83,6 +83,14 @@ async function requireApiKey(url) {
   return apiKey;
 }
 
+// File contents are useful on disk, not in a plan summary: they would bury
+// the actual decisions in the JSON output.
+function withoutContent(action) {
+  const summary = { ...action };
+  delete summary.content;
+  return summary;
+}
+
 function printRemotePlan(kind, plan) {
   if (plan.actions.length === 0 && plan.conflicts.length === 0) {
     console.log(`Nothing to ${kind}; already in sync.`);
@@ -123,7 +131,7 @@ export async function run(args) {
         changed: plan.changed,
         manifestPath: plan.manifestPath,
         manifest: plan.manifest,
-        fileActions: plan.fileActions.map(({ content, ...rest }) => rest),
+        fileActions: plan.fileActions.map(withoutContent),
         conflicts: plan.conflicts,
       }, null, 2));
     } else {
@@ -185,7 +193,7 @@ export async function run(args) {
     if (flags.has("--json")) {
       console.log(JSON.stringify({
         playbook: plan.playbook,
-        actions: plan.actions.map(({ content, ...rest }) => rest),
+        actions: plan.actions.map(withoutContent),
         conflicts: plan.conflicts,
       }, null, 2));
     } else {

@@ -31,7 +31,10 @@ function parseFrontmatter(content) {
   if (end === -1) return { values: {}, valid: false };
   const values = {};
   for (const line of content.slice(3, end).split(/\r?\n/)) {
-    const match = line.match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
+    // A trailing carriage return would make `.*$` fail to match, silently
+    // dropping the last key before the closing `---`. Discovery normalizes
+    // line endings; this keeps the parser correct for any other caller.
+    const match = line.replace(/\r$/, "").match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
     if (!match) continue;
     values[match[1]] = match[2].replace(/^["']|["']$/g, "").trim();
   }

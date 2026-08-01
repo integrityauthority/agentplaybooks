@@ -59,6 +59,9 @@ Biztonsági szabályok:
   kihagyva — soha nincs felülírás. Oldd fel az eltérést, majd futtasd újra.
 - A módosuló fájlokról előbb backup készül a `.agentplaybooks/backups/` alá.
 - Secret-értékek sosem kerülnek a manifestbe — csak környezeti hivatkozások.
+- A sorvégek normalizálva vannak (a CRLF LF-ként számít), így ugyanannak a
+  skillnek Windowson, macOS-en és Linuxon is ugyanaz a digestje. Egy vegyes
+  platformú csapat nem lát fantom-driftet egy checkout-különbség miatt.
 
 ## Távoli szinkron: playbook-megosztás a csapattal
 
@@ -71,13 +74,27 @@ apb pull <guid> --apply # skillek letöltése a .agents/skills/ tárba
 apb push --apply        # lokális skillek + manifest feltöltése
 ```
 
-A `pull` a távoli skilleket a hordozható `.agents/skills/` tárba írja, és a
-projektet a `.agentplaybooks/remote.json`-nal linkeli; egy ezt követő
-`apb sync --apply` minden engedélyezett platform-targetre továbbteríti őket.
-A `push` a skilleket és a manifestet tölti fel a linkelt (vagy egy új)
-playbookba — secret-értéket sosem tölt fel, és megtagadja az olyan tartalom
-feltöltését, ami beégetett hitelesítőadatnak tűnik. Self-hosted telepítéshez
-használd a `--url=<base>` kapcsolót vagy az `AGENTPLAYBOOKS_URL` változót.
+A round-trip mindkét irányban működik:
+
+- **Lokális → hosztolt** (`push`): a bármelyik platformmappában megtalált
+  skillek és a kanonikus manifest felkerülnek a linkelt (vagy egy új)
+  playbookba. A lokálisan már nem létező távoli skilleket nem bántja,
+  secret-értéket sosem tölt fel, és megtagadja az olyan tartalom feltöltését,
+  ami beégetett hitelesítőadatnak tűnik.
+- **Hosztolt → lokális** (`pull` + `sync --apply`): a távoli skillek a
+  hordozható `.agents/skills/` tárba kerülnek, a projekt pedig a
+  `.agentplaybooks/remote.json`-nal linkelődik; az ezt követő sync minden
+  engedélyezett platform-targetre szétteríti őket — bármelyik szerkesztőt is
+  használja a csapattársad.
+
+Self-hosted telepítéshez használd a `--url=<base>` kapcsolót vagy az
+`AGENTPLAYBOOKS_URL` változót.
+
+Hatókör ebben a kiadásban: a távoli `push`/`pull` a skilleket és a manifestet
+fedi le. Az MCP-szerver definíciók a lokális platformfájlok között
+szinkronizálódnak (`.mcp.json`, `.cursor/mcp.json`, `.codex/config.toml`), de
+a hosztolt playbook MCP-szerver listájába még nem íródnak be, és onnan még
+nem is olvasódnak.
 
 ## Claude Code és Claude Cowork plugin
 

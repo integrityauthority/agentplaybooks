@@ -59,6 +59,9 @@ Sicherheitsregeln:
   Sie werden gemeldet und übersprungen, nie überschrieben.
 - Geänderte Dateien werden zuerst unter `.agentplaybooks/backups/` gesichert.
 - Geheimniswerte gelangen nie in das Manifest — nur Umgebungsreferenzen.
+- Zeilenenden werden normalisiert (CRLF gilt als LF), damit derselbe Skill
+  unter Windows, macOS und Linux denselben Digest hat. Ein Team mit
+  gemischten Plattformen sieht keinen Phantom-Drift durch Checkout-Unterschiede.
 
 ## Remote-Sync: Playbooks im Team teilen
 
@@ -71,13 +74,25 @@ apb pull <guid> --apply # Skills nach .agents/skills/ herunterladen
 apb push --apply        # lokale Skills + Manifest hochladen
 ```
 
-`pull` schreibt Remote-Skills in den portablen `.agents/skills/`-Speicher und
-verknüpft das Projekt über `.agentplaybooks/remote.json`; ein anschließendes
-`apb sync --apply` verteilt sie auf alle aktivierten Plattformziele. `push`
-lädt Skills und Manifest in das verknüpfte (oder ein neues) Playbook hoch —
-es lädt nie Geheimniswerte hoch und verweigert Inhalte, die hartkodierte
-Zugangsdaten zu enthalten scheinen. Für Self-Hosting nutzen Sie
-`--url=<base>` oder `AGENTPLAYBOOKS_URL`.
+Der Round-Trip funktioniert in beide Richtungen:
+
+- **Lokal → gehostet** (`push`): Skills aus jedem Plattformordner sowie das
+  kanonische Manifest werden in das verknüpfte (oder ein neues) Playbook
+  geladen. Remote-Skills, die lokal nicht mehr existieren, bleiben unberührt,
+  Geheimniswerte werden nie hochgeladen, und die CLI verweigert Inhalte, die
+  hartkodierte Zugangsdaten zu enthalten scheinen.
+- **Gehostet → lokal** (`pull` + `sync --apply`): Remote-Skills landen im
+  portablen `.agents/skills/`-Speicher, das Projekt wird über
+  `.agentplaybooks/remote.json` verknüpft; der anschließende Sync verteilt sie
+  auf alle aktivierten Plattformziele — unabhängig vom Editor Ihres Teams.
+
+Für Self-Hosting nutzen Sie `--url=<base>` oder `AGENTPLAYBOOKS_URL`.
+
+Umfang dieser Version: Remote-`push`/`pull` deckt Skills und das Manifest ab.
+MCP-Server-Definitionen werden zwischen lokalen Plattformdateien
+(`.mcp.json`, `.cursor/mcp.json`, `.codex/config.toml`) synchronisiert, aber
+noch nicht in die MCP-Server-Liste des gehosteten Playbooks geschrieben oder
+von dort gelesen.
 
 ## Claude-Code- & Claude-Cowork-Plugin
 

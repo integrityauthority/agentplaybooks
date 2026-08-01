@@ -60,6 +60,9 @@ Reglas de seguridad:
 - Los archivos modificados se respaldan antes en `.agentplaybooks/backups/`.
 - Los valores secretos nunca entran en el manifiesto — solo referencias de
   entorno.
+- Los finales de línea se normalizan (CRLF se trata como LF), así el mismo
+  skill tiene el mismo digest en Windows, macOS y Linux. Un equipo con
+  plataformas mixtas nunca ve divergencias fantasma por el checkout.
 
 ## Sincronización remota: comparte playbooks con tu equipo
 
@@ -72,13 +75,24 @@ apb pull <guid> --apply # descarga skills a .agents/skills/
 apb push --apply        # sube skills locales + manifiesto
 ```
 
-`pull` escribe los skills remotos en el almacén portátil `.agents/skills/` y
-vincula el proyecto mediante `.agentplaybooks/remote.json`; un posterior
-`apb sync --apply` los propaga a todos los destinos habilitados. `push` sube
-los skills y el manifiesto al playbook vinculado (o a uno nuevo) — nunca sube
-valores secretos y se niega a subir contenido que parezca contener
-credenciales incrustadas. Para despliegues self-hosted usa `--url=<base>` o
-`AGENTPLAYBOOKS_URL`.
+El viaje de ida y vuelta funciona en ambas direcciones:
+
+- **Local → alojado** (`push`): los skills encontrados en cualquier carpeta de
+  plataforma y el manifiesto canónico se suben al playbook vinculado (o a uno
+  nuevo). Los skills remotos que ya no existen en local quedan intactos, nunca
+  se suben valores secretos y la CLI se niega a subir contenido que parezca
+  contener credenciales incrustadas.
+- **Alojado → local** (`pull` + `apb sync --apply`): los skills remotos llegan
+  al almacén portátil `.agents/skills/` y el proyecto se vincula mediante
+  `.agentplaybooks/remote.json`; el sync posterior los reparte a todos los
+  destinos habilitados, sea cual sea el editor de tu compañero.
+
+Para despliegues self-hosted usa `--url=<base>` o `AGENTPLAYBOOKS_URL`.
+
+Alcance de esta versión: el `push`/`pull` remoto cubre skills y el manifiesto.
+Las definiciones de servidores MCP se sincronizan entre archivos de plataforma
+locales (`.mcp.json`, `.cursor/mcp.json`, `.codex/config.toml`), pero aún no
+se escriben ni se leen en la lista de servidores MCP del playbook alojado.
 
 ## Plugin para Claude Code y Claude Cowork
 

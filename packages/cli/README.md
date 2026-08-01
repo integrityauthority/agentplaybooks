@@ -61,6 +61,13 @@ node ./bin/agentplaybooks.js push --apply           # local skills + manifest ->
   locally are left untouched.
 - `pull` and `push` are plan-only unless `--apply` is supplied. Use
   `--url=<base>` or `AGENTPLAYBOOKS_URL` for self-hosted deployments.
+- Remote sync covers skills and the manifest. MCP server definitions
+  synchronize between local platform files, but are not yet written to or read
+  from the hosted playbook's MCP server list.
+
+Line endings are normalized (CRLF is treated as LF) everywhere digests and
+content comparisons happen, so a Windows checkout and a macOS checkout of the
+same skill are recognized as identical instead of drifting.
 
 ## Claude Code / Claude Cowork plugin
 

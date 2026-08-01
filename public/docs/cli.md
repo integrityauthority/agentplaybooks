@@ -57,6 +57,9 @@ Safety rules:
   and skipped, never overwritten. Resolve the drift, then re-run.
 - Modified files are backed up under `.agentplaybooks/backups/` first.
 - Secret values never enter the manifest — only environment references.
+- Line endings are normalized (CRLF is treated as LF), so the same skill has
+  the same digest on Windows, macOS, and Linux. A mixed-platform team never
+  sees phantom drift from a checkout difference.
 
 ## Remote sync: share playbooks with your team
 
@@ -69,13 +72,24 @@ apb pull <guid> --apply # download skills into .agents/skills/
 apb push --apply        # upload local skills + manifest
 ```
 
-`pull` writes remote skills into the portable `.agents/skills/` store and
-links the project via `.agentplaybooks/remote.json`; a follow-up
-`apb sync --apply` propagates them to every enabled platform target. `push`
-uploads skills and the manifest to the linked (or a new) playbook — it never
-uploads secret values and refuses to push content that looks like it contains
-hard-coded credentials. Use `--url=<base>` or `AGENTPLAYBOOKS_URL` for
-self-hosted deployments.
+The round trip works in both directions:
+
+- **Local → hosted** (`push`): skills discovered in any platform folder plus
+  the canonical manifest are uploaded to the linked (or a new) playbook.
+  Remote skills that no longer exist locally are left untouched, secret values
+  are never uploaded, and the CLI refuses to push content that looks like it
+  contains hard-coded credentials.
+- **Hosted → local** (`pull` + `sync --apply`): remote skills land in the
+  portable `.agents/skills/` store and the project is linked via
+  `.agentplaybooks/remote.json`; the follow-up sync fans them out to every
+  enabled platform target, whichever editor your teammate uses.
+
+Use `--url=<base>` or `AGENTPLAYBOOKS_URL` for self-hosted deployments.
+
+Scope note for this release: remote `push`/`pull` cover skills and the
+manifest. MCP server definitions are synchronized between local platform
+files (`.mcp.json`, `.cursor/mcp.json`, `.codex/config.toml`) but are not yet
+written to or read from the hosted playbook's MCP server list.
 
 ## Claude Code & Claude Cowork plugin
 

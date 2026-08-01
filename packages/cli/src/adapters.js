@@ -1,7 +1,7 @@
 import { mkdir, copyFile, readFile, rename, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { normalizePath } from "./discovery.js";
+import { normalizePath, normalizeText } from "./discovery.js";
 
 // Platform adapters describe where a deployment target keeps its skills and
 // MCP server definitions.
@@ -49,7 +49,7 @@ function displayPath(adapter, relativePath) {
 
 async function readIfExists(absolutePath) {
   try {
-    return await readFile(absolutePath, "utf8");
+    return normalizeText(await readFile(absolutePath, "utf8"));
   } catch (error) {
     if (error?.code === "ENOENT") return null;
     throw error;

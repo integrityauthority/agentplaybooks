@@ -1,9 +1,31 @@
 {
   "name": "@agentplaybooks/cli",
   "version": "0.1.0-alpha.1",
-  "description": "Audit and synchronize portable AI agent playbooks",
+  "description": "Audit and synchronize portable AI agent playbooks across Claude Code, Cursor, Codex, Antigravity, and Hermes Agent",
   "type": "module",
   "license": "PolyForm-Noncommercial-1.0.0",
+  "author": "Mate Benyovszky",
+  "homepage": "https://agentplaybooks.ai",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/integrityauthority/agentplaybooks.git",
+    "directory": "packages/cli"
+  },
+  "bugs": {
+    "url": "https://github.com/integrityauthority/agentplaybooks/issues"
+  },
+  "keywords": [
+    "agent",
+    "agent-skills",
+    "mcp",
+    "model-context-protocol",
+    "claude-code",
+    "cursor",
+    "codex",
+    "playbooks",
+    "audit",
+    "sync"
+  ],
   "bin": {
     "apb": "./bin/agentplaybooks.js",
     "agentplaybooks": "./bin/agentplaybooks.js"
@@ -14,10 +36,14 @@
     ".claude-plugin",
     "commands",
     "skills",
+    "LICENSE",
     "README.md"
   ],
   "engines": {
     "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "test": "node --test"

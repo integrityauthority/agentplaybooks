@@ -2,6 +2,7 @@ import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { runDoctor } from "./doctor.js";
+import { normalizeText } from "./discovery.js";
 import { createManifest, comparableManifest } from "./manifest.js";
 import { canonicalJson } from "./adapters.js";
 
@@ -116,7 +117,7 @@ async function writeLink(root, link) {
 }
 
 function skillFileContent(skill) {
-  const content = skill.content ?? "";
+  const content = normalizeText(skill.content ?? "");
   if (content.startsWith("---")) return content.endsWith("\n") ? content : `${content}\n`;
   const description = (skill.description ?? "").replace(/\r?\n/g, " ").trim();
   return `---\nname: ${skill.name}\ndescription: ${description}\n---\n\n${content}${content.endsWith("\n") ? "" : "\n"}`;
@@ -124,7 +125,7 @@ function skillFileContent(skill) {
 
 async function readLocalFile(root, relativePath) {
   try {
-    return await readFile(path.join(root, ...relativePath.split("/")), "utf8");
+    return normalizeText(await readFile(path.join(root, ...relativePath.split("/")), "utf8"));
   } catch (error) {
     if (error?.code === "ENOENT") return null;
     throw error;
@@ -240,7 +241,7 @@ export async function planPush(root, { url, apiKey, fetchImpl } = {}) {
       const existing = remoteSkills.get(skill.name);
       if (!existing) {
         actions.push({ kind: "skill", action: "create", name: skill.name });
-      } else if ((existing.content ?? "") !== skill.content || (existing.description ?? "") !== skill.description) {
+      } else if (normalizeText(existing.content ?? "") !== skill.content || (existing.description ?? "") !== skill.description) {
         actions.push({ kind: "skill", action: "update", name: skill.name, skillId: existing.id });
       }
     }

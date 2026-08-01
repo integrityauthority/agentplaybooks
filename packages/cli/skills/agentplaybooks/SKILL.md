@@ -66,3 +66,6 @@ Substitute your variant for `apb` in the commands below.
   instead of working around it.
 - Secret values never belong in `agentplaybook.json` or in pushed content;
   only environment/vault references are allowed.
+- Remote `push`/`pull` cover skills and the manifest. MCP server definitions
+  travel between local platform files only — if the user expects them in the
+  hosted playbook, say so instead of implying it works.

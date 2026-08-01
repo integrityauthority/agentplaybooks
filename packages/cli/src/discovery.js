@@ -95,10 +95,24 @@ async function walk(root) {
   return files;
 }
 
+/**
+ * Normalize CRLF to LF.
+ *
+ * Line endings are a checkout detail, not a difference in configuration: the
+ * same skill checked out on Windows and on macOS must produce the same digest,
+ * otherwise every mixed-platform team sees phantom drift and every comparison
+ * against remote or platform files reports a phantom conflict. All discovered
+ * text goes through here, so digests, frontmatter parsing, and content
+ * comparisons all operate on LF.
+ */
+export function normalizeText(value) {
+  return value.replace(/\r\n/g, "\n");
+}
+
 async function readText(absolutePath) {
   const buffer = await readFile(absolutePath);
   if (buffer.byteLength > MAX_TEXT_BYTES) return null;
-  return buffer.toString("utf8");
+  return normalizeText(buffer.toString("utf8"));
 }
 
 export async function discover(root) {
