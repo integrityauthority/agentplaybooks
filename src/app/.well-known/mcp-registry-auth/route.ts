@@ -1,5 +1,3 @@
-export const runtime = "edge";
-
 // This is an MCP Registry domain-authentication proof, derived from the
 // public half of the local Ed25519 key. It is intentionally public.
 const MCP_REGISTRY_AUTH_PROOF =
