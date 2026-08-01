@@ -9,7 +9,7 @@ export function GET() {
   return new Response(MCP_REGISTRY_AUTH_PROOF, {
     headers: {
       "Content-Type": "text/plain; charset=utf-8",
-      "Cache-Control": "public, max-age=300",
+      "Cache-Control": "no-store",
     },
   });
 }
