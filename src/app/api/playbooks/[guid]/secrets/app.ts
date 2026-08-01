@@ -3,6 +3,7 @@ import { getServiceSupabase } from "@/app/api/_shared/supabase";
 import { getAuthenticatedUser, validateApiKey } from "@/app/api/_shared/auth";
 import { getPlaybookByGuid } from "@/app/api/_shared/guards";
 import { encryptSecret, decryptSecret } from "@/lib/crypto";
+import { checkSecretDestination, normalizeAllowedHosts } from "@/lib/secret-destinations";
 import type { SecretCategory, SecretMetadata } from "@/lib/supabase/types";
 
 const app = createApiApp("/api/playbooks/:guid/secrets");
@@ -28,6 +29,7 @@ function toMetadata(row: Record<string, unknown>): SecretMetadata {
     last_used_at: (row.last_used_at as string) || null,
     use_count: (row.use_count as number) || 0,
     allow_api_key_reveal: !!row.allow_api_key_reveal,
+    allowed_hosts: normalizeAllowedHosts(row.allowed_hosts),
     created_at: row.created_at as string,
     updated_at: row.updated_at as string,
   };
@@ -57,7 +59,7 @@ app.get("/", async (c) => {
 
   let query = supabase
     .from("secrets")
-    .select("id, playbook_id, name, description, category, rotated_at, expires_at, last_used_at, use_count, allow_api_key_reveal, created_at, updated_at")
+    .select("id, playbook_id, name, description, category, rotated_at, expires_at, last_used_at, use_count, allow_api_key_reveal, allowed_hosts, created_at, updated_at")
     .eq("playbook_id", playbook.id);
 
   if (category) {
@@ -88,7 +90,7 @@ app.post("/", async (c) => {
   }
 
   const body = await c.req.json();
-  const { name, value, description, category, expires_at, allow_api_key_reveal } = body;
+  const { name, value, description, category, expires_at, allow_api_key_reveal, allowed_hosts } = body;
 
   if (!name || typeof name !== "string" || name.trim().length === 0) {
     return c.json({ error: "name is required" }, 400);
@@ -145,6 +147,7 @@ app.post("/", async (c) => {
       category: category || "general",
       expires_at: expires_at || null,
       allow_api_key_reveal: !!allow_api_key_reveal,
+      allowed_hosts: allowed_hosts === undefined ? null : normalizeAllowedHosts(allowed_hosts),
       encrypted_value: encrypted.encrypted_value,
       iv: encrypted.iv,
       auth_tag: encrypted.auth_tag,
@@ -255,7 +258,7 @@ app.put("/:name", async (c) => {
   }
 
   const body = await c.req.json();
-  const { value, description, category, expires_at, allow_api_key_reveal } = body;
+  const { value, description, category, expires_at, allow_api_key_reveal, allowed_hosts } = body;
 
   const supabase = getServiceSupabase();
 
@@ -300,6 +303,9 @@ app.put("/:name", async (c) => {
   if (category !== undefined) updateData.category = category;
   if (expires_at !== undefined) updateData.expires_at = expires_at;
   if (allow_api_key_reveal !== undefined) updateData.allow_api_key_reveal = !!allow_api_key_reveal;
+  if (allowed_hosts !== undefined) {
+    updateData.allowed_hosts = allowed_hosts === null ? null : normalizeAllowedHosts(allowed_hosts);
+  }
 
   const { data, error } = await supabase
     .from("secrets")
@@ -402,6 +408,11 @@ app.post("/proxy", async (c) => {
 
   if (secretErr || !secret) {
     return c.json({ error: `Secret '${secret_name}' not found` }, 404);
+  }
+
+  const destination = checkSecretDestination(url, secret.allowed_hosts);
+  if (!destination.allowed) {
+    return c.json({ error: destination.reason }, 403);
   }
 
   let secretValue: string;

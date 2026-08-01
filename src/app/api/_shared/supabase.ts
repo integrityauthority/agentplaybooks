@@ -14,6 +14,3 @@ export function getServiceSupabase() {
   }
   return createServerClient(url, key);
 }
-
-// Re-export getDb from the Drizzle ORM factory
-export { getDb } from "@/lib/db";

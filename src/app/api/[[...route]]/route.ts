@@ -2,7 +2,6 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import { handle } from "hono/vercel";
 import { cors } from "hono/cors";
-import { createServerClient } from "@/lib/supabase/client";
 import type { UserApiKeysRow, Playbook, Skill, MCPServer, ProfilesRow, Persona } from "@/lib/supabase/types";
 import { ATTACHMENT_LIMITS, ALLOWED_FILE_TYPES } from "@/lib/supabase/types";
 import {
@@ -11,7 +10,8 @@ import {
   validateContent
 } from "@/lib/attachment-validator";
 import { hashApiKey, generateApiKey, generateGuid, getKeyPrefix } from "@/lib/utils";
-import { cookies } from "next/headers";
+import { getAuthenticatedUser as getAuthenticatedUserFromRequest } from "@/app/api/_shared/auth";
+import { getServiceSupabase, getSupabase } from "@/app/api/_shared/supabase";
 import { checkPlaybookWriteAccess, getPlaybookAccessRole } from "@/app/api/_shared/guards";
 import { buildPlaybookUpdate } from "@/lib/playbook-access";
 
@@ -92,67 +92,15 @@ app.use("*", async (c, next) => {
   c.header("X-Frame-Options", "DENY");
 });
 
-// Helper: Get Supabase client
-function getSupabase() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-  return createServerClient(url, key);
-}
-
-// Helper: Get service role client (bypasses RLS)
-function getServiceSupabase() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!key) {
-    throw new Error("SUPABASE_SERVICE_ROLE_KEY is required for privileged database access");
-  }
-  return createServerClient(url, key);
-}
-
-// Helper: Get authenticated user from cookies or Authorization header
+// Session auth and Supabase client construction live in `_shared` so this file
+// and the standalone route handlers cannot drift apart. These are thin
+// context-shaped wrappers over that single implementation.
 async function getAuthenticatedUser(c: AppContext): Promise<{ id: string } | null> {
-  const supabase = getSupabase();
-
-  // Try to get user from cookie
-  try {
-    const cookieStore = await cookies();
-    const accessToken = cookieStore.get("sb-access-token")?.value;
-    const refreshToken = cookieStore.get("sb-refresh-token")?.value;
-
-    if (accessToken && refreshToken) {
-      const { data: { user }, error } = await supabase.auth.setSession({
-        access_token: accessToken,
-        refresh_token: refreshToken,
-      });
-      if (!error && user) {
-        return { id: user.id };
-      }
-    }
-  } catch {
-    // Cookie parsing might fail in some environments
-    // Silently fall through to header auth
-  }
-
-  // Try Authorization header (for API calls)
-  const authHeader = c.req.header("Authorization");
-  if (authHeader?.startsWith("Bearer ") && !authHeader.startsWith("Bearer apb_")) {
-    const token = authHeader.replace("Bearer ", "");
-    const { data: { user }, error } = await supabase.auth.getUser(token);
-    if (!error && user) {
-      return { id: user.id };
-    }
-  }
-
-  return null;
+  return getAuthenticatedUserFromRequest(c.req.raw);
 }
 
-// Middleware: Require authenticated user
 async function requireAuth(c: AppContext): Promise<{ id: string } | null> {
-  const user = await getAuthenticatedUser(c);
-  if (!user) {
-    return null;
-  }
-  return user;
+  return getAuthenticatedUser(c);
 }
 
 
@@ -2754,11 +2702,14 @@ app.get("/public/skills/:id", async (c) => {
   const id = c.req.param("id");
   const supabase = getSupabase();
 
+  // This endpoint is unauthenticated, so the projection is explicit rather than
+  // `*`: a column added to `skills` or `skill_attachments` later must be opted
+  // into deliberately instead of being published the moment it is created.
   const { data, error } = await supabase
     .from("skills")
     .select(`
-      *,
-      skill_attachments(*),
+      id, playbook_id, publisher_id, name, description, content, licence, created_at, priority,
+      skill_attachments(id, skill_id, filename, file_type, language, description, content, size_bytes, created_at),
       playbook:playbooks!inner(id, guid, name, visibility)
     `)
     .eq("id", id)
@@ -2834,10 +2785,15 @@ app.get("/public/mcp/:id", async (c) => {
   const id = c.req.param("id");
   const supabase = getSupabase();
 
+  // Explicit projection for the same reason as `/public/skills/:id`.
+  // `transport_config` is deliberately included: the marketplace lets people
+  // copy a shared MCP server into their own playbook. Upstream credentials are
+  // never here — they live in `mcp_server_secrets`, which is service-role only.
   const { data, error } = await supabase
     .from("mcp_servers")
     .select(`
-      *,
+      id, playbook_id, publisher_id, name, description, tools, resources,
+      transport_type, transport_config, created_at,
       playbook:playbooks!inner(id, guid, name, visibility)
     `)
     .eq("id", id)

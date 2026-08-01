@@ -332,7 +332,22 @@ agentplaybooks/
 - profiles: public user profile data
 - playbook_stars: marketplace stars
 
-All tables use Row Level Security (RLS).
+### A note on Row Level Security
+
+RLS is enabled on the tables listed above, but it is **not** the primary
+authorization mechanism at runtime. Almost all API routes query with the
+service-role key, which bypasses RLS; authorization is enforced in application
+code (`src/app/api/_shared/guards.ts`).
+
+RLS *is* load-bearing for the handful of endpoints that read public playbooks
+with the anon key — the MCP manifest (`/api/mcp/:guid`), its tool routes, and
+the public skills/MCP listings. Those depend on the anon `SELECT` policies in
+`supabase/migrations/20260107_permissions_refactor.sql`. Removing or disabling
+those policies breaks the endpoints rather than merely relaxing them.
+
+Policies written against `auth.uid()` are currently inert, because no
+JWT-bearing client performs table queries — the browser talks only to
+`/api/*`, never to Postgres directly.
 
 ## Contributing
 

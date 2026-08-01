@@ -54,3 +54,6 @@ yarn-error.log*
 
 # auto-generated
 src/lib/blog-slugs.generated.ts
+
+# Internal deployment planning notes (not for the public repo)
+docs/integritas/
