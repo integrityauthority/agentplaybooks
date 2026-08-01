@@ -1,4 +1,3 @@
-import { cookies } from "next/headers";
 import { hashApiKey } from "@/lib/utils";
 import { getServiceSupabase, getSupabase } from "./supabase";
 import type { ApiKey, UserApiKeysRow } from "@/lib/supabase/types";
@@ -9,27 +8,17 @@ type ApiKeyWithPlaybook = ApiKey & {
 
 type UserApiKeyData = UserApiKeysRow & { user_id: string };
 
+/**
+ * Resolve the signed-in user from the request's bearer token.
+ *
+ * The browser keeps its Supabase session in localStorage and sends it as an
+ * Authorization header (see `src/lib/auth-fetch.ts`); nothing in this app ever
+ * writes `sb-access-token` / `sb-refresh-token` cookies. A cookie branch used
+ * to be read here, which meant any co-hosted app or proxy able to set a cookie
+ * on this domain could impersonate a user. It has been removed.
+ */
 export async function getAuthenticatedUser(request?: Request): Promise<{ id: string } | null> {
   const supabase = getSupabase();
-
-  try {
-    const cookieStore = await cookies();
-    const accessToken = cookieStore.get("sb-access-token")?.value;
-    const refreshToken = cookieStore.get("sb-refresh-token")?.value;
-
-    if (accessToken && refreshToken) {
-      const { data: { user }, error } = await supabase.auth.setSession({
-        access_token: accessToken,
-        refresh_token: refreshToken,
-      });
-      if (!error && user) {
-        return { id: user.id };
-      }
-    }
-  } catch {
-    // Cookie parsing may fail in some environments (e.g. Cloudflare)
-    // Fall through to header-based auth
-  }
 
   if (request) {
     const authHeader = request.headers.get("Authorization");

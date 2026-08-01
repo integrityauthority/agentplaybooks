@@ -2,6 +2,31 @@
 
 Deploy AgentPlaybooks on your own infrastructure.
 
+> ## Current limitations — read this first
+>
+> *Last verified: 2026-08-01.*
+>
+> **1. There is no baseline migration.** `supabase/migrations/` contains only
+> incremental changes. No `CREATE TABLE` exists for `playbooks`, `skills`,
+> `skill_attachments`, `mcp_servers`, `memories`, `api_keys`, `user_api_keys`,
+> `profiles`, or `playbook_stars`, and no `ENABLE ROW LEVEL SECURITY` for them
+> either. Running the migrations against an empty database fails. Until a
+> baseline lands, take a `supabase db dump --schema-only` from an existing
+> project — it captures the tables, triggers and RLS policies together.
+>
+> **2. "Self-hosted" means running your own Supabase, not just your own
+> Postgres.** Every API route queries the Supabase Data API and authentication
+> is Supabase Auth, so a bare PostgreSQL server is not enough. For an
+> on-premise deployment, run the
+> [self-hosted Supabase stack](https://supabase.com/docs/guides/self-hosting/docker)
+> and point `NEXT_PUBLIC_SUPABASE_URL` at it. The application needs no changes.
+>
+> **3. The bundled `docker-compose.yml` Postgres service does not work.** It
+> mounts `supabase/migrations` into a vanilla `postgres:16-alpine`
+> `docker-entrypoint-initdb.d`, but those files call `auth.uid()` and
+> `extensions.uuid_generate_v4()`, which do not exist outside the Supabase
+> stack. Initialisation errors out.
+
 ## Prerequisites
 
 - Node.js 20+
@@ -68,49 +93,23 @@ Set redirect URLs to `https://your-domain.pages.dev/*`
 
 For running on your own servers.
 
-### Microsoft SQL Server database
+### Microsoft SQL Server
 
-The repository contains a dedicated SQL Server 2022 Compose stack and a
-separate Drizzle migration history. Copy the example environment first:
+SQL Server is **not supported**. An experimental Drizzle/SQL Server layer used
+to live here. It was removed because only two functions ever queried through
+it, so `DB_DIALECT=mssql` produced a split-brain deployment — the playbook list
+read from SQL Server while everything else, including all authorization checks,
+still read from Supabase — and it started without error.
 
-```bash
-cp .env.mssql.example .env
-```
+The schemas, migration and Compose stack remain in git history; the last commit
+before removal is `08cb203`, so `git checkout 08cb203 -- src/lib/db drizzle`
+brings them back.
 
-Set a strong `MSSQL_SA_PASSWORD` and a 64-character hexadecimal
-`SECRETS_ENCRYPTION_KEY`, then start the stack:
-
-```bash
-docker compose -f docker-compose.mssql.yml up --build
-```
-
-The stack performs three ordered operations:
-
-1. starts SQL Server and waits for its health check;
-2. creates the configured database if it does not exist;
-3. applies pending migrations before starting AgentPlaybooks.
-
-For a database outside Docker, use:
-
-```bash
-export DB_DIALECT=mssql
-export DATABASE_URL='Server=sql.example.internal,1433;Database=agentplaybooks;User Id=agentplaybooks;Password=...;Encrypt=true;TrustServerCertificate=false;'
-npm run db:migrate:mssql:runtime
-npm run db:smoke:mssql
-```
-
-Schema changes are generated independently for each supported database:
-
-```bash
-npm run db:generate:postgres
-npm run db:generate:mssql
-```
-
-> **Current limitation:** the SQL Server schema, connection, migration and
-> smoke-test layer are available, but the ongoing Supabase Data API migration
-> must be completed before every application endpoint can use SQL Server.
-> Authentication is intentionally unchanged in this phase and still uses
-> Supabase Auth.
+Supporting SQL Server properly means migrating every remaining Supabase Data
+API call and replacing Supabase Auth, since GoTrue has no SQL Server
+equivalent. If you need an on-premise database today, run the
+[self-hosted Supabase stack](https://supabase.com/docs/guides/self-hosting/docker)
+instead — the application works against it unchanged.
 
 ### docker-compose.yml
 
@@ -171,12 +170,6 @@ While optimized for Cloudflare, the app works on Vercel too.
 
 ## Database Migrations
 
-### Microsoft SQL Server
-
-Committed SQL Server migrations live under `drizzle/mssql`. Production
-deployments should run `npm run db:migrate:mssql:runtime`; do not use
-`drizzle-kit push` against production databases.
-
 ### Initial Setup
 
 Run the migration in `supabase/migrations/` or use Supabase CLI:
@@ -204,6 +197,31 @@ Copy the SQL from `supabase/migrations/initial_schema.sql` and run in Supabase S
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | Supabase anon (public) key |
 | `SUPABASE_SERVICE_ROLE_KEY` | Yes | Supabase service role key (secret) |
 | `MCP_SECRET_ENCRYPTION_KEY` | Yes for federated tools | Random value (32+ characters) used to encrypt upstream MCP/OpenAPI credentials |
+| `SECRETS_ENCRYPTION_KEY` | Yes for the secrets vault | 64 hexadecimal characters. Rotating it makes existing secrets undecryptable — there is no re-encryption tooling yet. |
+| `ALLOWED_ORIGINS` | No | Comma-separated origins allowed to make credentialed cross-origin API calls. Setting it **replaces** the default list, which is what a self-hosted instance wants — otherwise the project's own domains stay trusted. Unset keeps the previous behaviour. |
+| `SECRETS_REQUIRE_ALLOWED_HOSTS` | No | Set to `true` to refuse outbound use of any secret that has not declared `allowed_hosts`. Off by default. |
+
+### Pinning a secret to specific destinations
+
+`use_secret` and `POST /api/playbooks/:guid/secrets/proxy` inject a decrypted
+credential into a request whose URL the caller supplies. The agent never sees
+the plaintext, but it does choose the destination — so a caller holding a
+`secrets:read` key, including an agent following instructions injected into its
+context, can name any host.
+
+A secret can therefore pin itself:
+
+```bash
+curl -X PUT 'https://your-domain.com/api/playbooks/GUID/secrets/GITHUB_TOKEN' \
+  -H "Authorization: Bearer apb_your_key" \
+  -H "Content-Type: application/json" \
+  -d '{"allowed_hosts": ["api.github.com", "*.githubusercontent.com"]}'
+```
+
+Entries are case-insensitive hostnames. A leading `*.` matches subdomains but
+not the bare domain, so list both if you need both. An unset or empty list means
+any destination, which keeps existing secrets working unchanged; set
+`SECRETS_REQUIRE_ALLOWED_HOSTS=true` to make pinning mandatory on your instance.
 
 ## Custom Domain
 

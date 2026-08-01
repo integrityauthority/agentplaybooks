@@ -1,9 +1,29 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 
-export function createApiApp(basePath?: string) {
-  const ALLOWED_ORIGINS = [
-    process.env.NEXT_PUBLIC_APP_URL || "https://agentplaybooks.ai",
+/**
+ * Origins allowed to make credentialed cross-origin API calls.
+ *
+ * Self-hosted deployments set `ALLOWED_ORIGINS` (comma-separated) to replace
+ * the list entirely — otherwise the project's own hosted domains would stay
+ * trusted on an unrelated instance. Leaving it unset keeps the previous
+ * behaviour, so hosted deployments are unaffected.
+ */
+export function resolveAllowedOrigins(
+  configured = process.env.ALLOWED_ORIGINS,
+  appUrl = process.env.NEXT_PUBLIC_APP_URL,
+): string[] {
+  const explicit = configured
+    ?.split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  if (explicit && explicit.length > 0) {
+    return explicit;
+  }
+
+  return [
+    appUrl || "https://agentplaybooks.ai",
     "https://agentplaybooks.ai",
     "https://www.agentplaybooks.ai",
     "https://apbks.com",
@@ -11,12 +31,15 @@ export function createApiApp(basePath?: string) {
     "https://apbks.online",
     "https://www.apbks.online",
   ].filter(Boolean);
+}
 
+export function createApiApp(basePath?: string) {
   const app = new Hono();
   app.use("*", cors({
     origin: (origin) => {
-      if (!origin) return ALLOWED_ORIGINS[0];
-      if (ALLOWED_ORIGINS.includes(origin)) return origin;
+      const allowedOrigins = resolveAllowedOrigins();
+      if (!origin) return allowedOrigins[0];
+      if (allowedOrigins.includes(origin)) return origin;
       if (process.env.NODE_ENV === "development" && origin.startsWith("http://localhost")) return origin;
       return null as unknown as string;
     },

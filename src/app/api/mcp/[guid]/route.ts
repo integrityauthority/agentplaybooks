@@ -4,6 +4,7 @@ import { validateApiKey } from "@/app/api/_shared/auth";
 import { getServiceSupabase, getSupabase } from "@/app/api/_shared/supabase";
 import type { McpResource, McpTool, MCPServer, Playbook, MemoryTier, MemoryType, MemoryStatus, CanvasSection, SecretCategory } from "@/lib/supabase/types";
 import { encryptSecret, decryptSecret } from "@/lib/crypto";
+import { checkSecretDestination } from "@/lib/secret-destinations";
 import { PLAYBOOK_TOOLS } from "@/app/api/_shared/playbook-tools";
 import {
   callFederatedTool,
@@ -163,10 +164,13 @@ app.get("/", async (c) => {
   // Check if it's a UUID or GUID
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(guid);
 
-  // Get playbook with all related data
+  // Unauthenticated read of a public playbook, so the projection is explicit
+  // rather than `*` — a column added later must be published deliberately.
   let query = supabase
     .from("playbooks")
-    .select("*");
+    // Written as one literal: supabase-js infers the row type from the select
+    // string at compile time, which a concatenated expression defeats.
+    .select("id, user_id, publisher_id, guid, name, description, config, visibility, star_count, tags, persona_name, persona_system_prompt, persona_metadata, created_at, updated_at");
 
   if (isUuid) {
     query = query.eq("id", guid);
@@ -1989,6 +1993,11 @@ use_secret({
 
             if (useSecretError || !useSecretData) {
               throw new Error(`Secret '${useSecretName}' not found`);
+            }
+
+            const useDestination = checkSecretDestination(useUrl, useSecretData.allowed_hosts);
+            if (!useDestination.allowed) {
+              throw new Error(useDestination.reason);
             }
 
             const secretValue = await decryptSecret({

@@ -3,7 +3,7 @@ import { requireAuth } from "../../_shared/auth";
 import {
   createPlaybook,
   listAccessiblePlaybooks,
-} from "@/lib/db/repositories/playbooks";
+} from "@/lib/repositories/playbooks";
 
 export async function GET(request: NextRequest) {
   const user = await requireAuth(request);
