@@ -36,8 +36,9 @@ the five above.
 >
 > Open source: apbks.com/docs/cli
 
-Character count target: keep under 280 including the shortened link. If it
-runs long, cut the folder list to three entries and add "…and more".
+Measured at 263 characters with the link counted as X's fixed 23, so it fits
+the 280 limit as written. If you edit it, recount — cutting the folder list to
+three entries plus "…and more" buys the most room.
 
 ### Optional follow-up thread
 
