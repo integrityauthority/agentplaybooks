@@ -708,6 +708,11 @@ export default function PlaybookEditorPage({ params }: { params: Promise<{ id: s
           system_prompt: playbook.persona_system_prompt || "You are a helpful AI assistant.",
           metadata: playbook.persona_metadata || {},
         },
+        // A sibling of persona, not a field inside it: the persona is the agent's
+        // identity, instructions are this project's rules. agents.md in the same
+        // archive renders them together, but the machine-readable export has to
+        // keep them separable or a re-import cannot tell them apart.
+        instructions: playbook.instructions,
       };
 
       zip.file("playbook.json", JSON.stringify(playbookExport, null, 2));
