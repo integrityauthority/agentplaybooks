@@ -45,7 +45,7 @@ async function loadMcpSecrets(serverId: string) {
     .select("encrypted_payload, iv")
     .eq("mcp_server_id", serverId)
     .maybeSingle();
-  return data ? decryptMcpSecrets(data.encrypted_payload, data.iv) : {};
+  return data ? decryptMcpSecrets(data.encrypted_payload, data.iv, serverId) : {};
 }
 
 function auditWriter(playbookId: string, requestId?: string) {

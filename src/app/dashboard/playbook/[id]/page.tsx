@@ -723,6 +723,15 @@ export default function PlaybookEditorPage({ params }: { params: Promise<{ id: s
       zip.file("memories.json", JSON.stringify(memories, null, 2));
       zip.file("agents.md", buildAgentsMarkdown());
 
+      // The combined agents.md above documents persona and instructions together.
+      // This is the instruction file on its own, ready to drop into a project as
+      // AGENTS.md — the form Codex and Hermes read natively. It lives in a
+      // subdirectory because "agents.md" and "AGENTS.md" differ only in case, and
+      // extracting both into one folder collides on Windows and macOS.
+      if (playbook.instructions?.trim()) {
+        zip.file("instructions/AGENTS.md", `${playbook.instructions.trim()}\n`);
+      }
+
       for (const skill of skillsExport) {
         const baseName = (skill.name || "skill").toLowerCase().replace(/[^a-z0-9-_]+/g, "_");
         zip.file(`skills/${baseName}.json`, JSON.stringify(skill, null, 2));

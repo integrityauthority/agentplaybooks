@@ -67,7 +67,9 @@ A `tools/list` a beépített playbookműveleteket és a federált eszközöket l
 
 ## Telepítés és biztonság
 
-Állíts be legalább 32 karakteres, véletlen `MCP_SECRET_ENCRYPTION_KEY` értéket, és futtasd a `supabase/migrations/20260730_federated_mcp_proxy.sql` migrációt. A secret plaintext csak íráskor érkezik be, AES-GCM-mel titkosítva tárolódik, és az API soha nem adja vissza.
+Állíts be legalább 32 karakteres, véletlen `MCP_SECRET_ENCRYPTION_KEY` értéket – legjobb egy 64 karakteres hexadecimális sztring, mert az érték nyers kulcsanyagként kerül felhasználásra, nem hasheljük –, és futtasd a `supabase/migrations/20260730_federated_mcp_proxy.sql` migrációt. A secret plaintext csak íráskor érkezik be, AES-256-GCM-mel titkosítva tárolódik, és az API soha nem adja vissza.
+
+Az egyes szerverek hitelesítő adatait ebből az értékből HKDF-fel származtatott kulccsal titkosítjuk, amelyet a szerver azonosítója sóz meg, és az azonosító a titkosított adat hitelesített része. Így az egyik szerver kulcsanyagával nem lehet egy másik szerver adatát visszafejteni, egy másik szerver sorába átmásolt titkosított érték pedig egyáltalán nem fejthető vissza. A változás előtt írt sorok (nincs `v2:` prefixük) továbbra is olvashatók, és automatikusan frissülnek, amikor az adott szerver secretjeit legközelebb mented.
 
 Az `access: "public"` upstream költséget tehet nyilvánosan elérhetővé. Javasolt a `playbook_api_key`; ehhez a kliensnek `tools:call` vagy `full` jogosultságú playbookkulcs kell.
 

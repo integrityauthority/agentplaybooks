@@ -67,7 +67,9 @@ Jede OpenAPI-`operationId` wird zu einem namespaced MCP-Tool. Path-, Query- und 
 
 ## Bereitstellung und Sicherheit
 
-`MCP_SECRET_ENCRYPTION_KEY` muss ein zufälliger Wert mit mindestens 32 Zeichen sein. Danach `supabase/migrations/20260730_federated_mcp_proxy.sql` anwenden. Secret-Klartext wird nur beim Schreiben angenommen, mit AES-GCM gespeichert und nie zurückgegeben.
+`MCP_SECRET_ENCRYPTION_KEY` muss ein zufälliger Wert mit mindestens 32 Zeichen sein – vorzugsweise eine 64 Zeichen lange Hex-Zeichenkette, da der Wert als rohes Schlüsselmaterial und nicht gehasht verwendet wird. Danach `supabase/migrations/20260730_federated_mcp_proxy.sql` anwenden. Secret-Klartext wird nur beim Schreiben angenommen, mit AES-256-GCM gespeichert und nie zurückgegeben.
+
+Die Zugangsdaten jedes Servers werden mit einem Schlüssel verschlüsselt, der über HKDF aus diesem Wert abgeleitet und mit der Server-ID gesalzen wird; die ID ist als Teil des Chiffrats authentifiziert. Das Schlüsselmaterial eines Servers kann daher die Daten eines anderen Servers nicht entschlüsseln, und ein in eine andere Serverzeile kopiertes Chiffrat lässt sich überhaupt nicht entschlüsseln. Vor dieser Änderung geschriebene Zeilen (ohne `v2:`-Präfix) bleiben lesbar und werden beim nächsten Speichern der Secrets des betreffenden Servers aktualisiert.
 
 `access: "public"` kann Upstream-Kosten öffentlich auslösbar machen. Empfohlen ist `playbook_api_key`; der Client benötigt dann `tools:call` oder `full`.
 

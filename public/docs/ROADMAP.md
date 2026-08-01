@@ -80,13 +80,18 @@ This document outlines the development roadmap for AgentPlaybooks - the first op
   - Deliberately not solved by writing a `.env` file: a credential on disk is the
     thing we are trying to avoid
 
-- [ ] **One credential, one store** - Unify federation secrets with the vault
+- [ ] **One credential, one store** - Unify federation secrets with the vault (medium term)
   - Today `transport_config.auth.token_secret` resolves only from the per-server
     `mcp_server_secrets` payload, so the same token can be needed in two places
   - Plan: keep the per-server payload authoritative, then fall back to the
     playbook vault by name — no migration, nothing existing breaks
-  - Also bring `mcp_server_secrets` up to the vault's crypto: HKDF-derived keys
-    and ciphertext bound to its server id, behind a version prefix
+  - Open question to settle first: a key with `secrets:read` can proxy vault
+    secrets, so federation credentials moving into the vault must either be
+    marked non-proxyable or pinned with `allowed_hosts`
+  - ✅ Done as a first step: `mcp_server_secrets` now matches the vault's crypto
+    (HKDF key per server, ciphertext bound to its server id, `v2:` prefix with
+    the previous format still readable), so the two stores are no longer
+    unequally protected while the merge is designed
 
 ### Code Quality 📋
 
