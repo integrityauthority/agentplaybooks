@@ -82,6 +82,29 @@ npm run preview
 npx wrangler deploy
 ```
 
+## CLI and Claude Code Plugin (`packages/cli`)
+
+`agentplaybooks doctor <project>` audits local agent configuration
+(instructions, Agent Skills, MCP servers, likely hard-coded secrets, drift)
+and `agentplaybooks sync <project>` creates the canonical
+`agentplaybook.json` plus the platform files missing from enabled targets:
+Claude Code (`.claude/skills` + `.mcp.json`), Cursor (`.cursor/skills` +
+`.cursor/mcp.json`), ChatGPT/Codex (`.codex/skills` + `.codex/config.toml`),
+Google Antigravity (`.agents/skills`), and Hermes Agent (`~/.hermes/skills`).
+`login` / `playbooks` / `pull` / `push` synchronize skills, MCP servers, and the
+manifest with a hosted playbook using a user API key; secret values never move,
+only the references the playbook declares in `spec.secrets`. All mutating
+commands are plan-only until `--apply`. See
+[packages/cli/README.md](packages/cli/README.md).
+
+The same package doubles as a Claude Code / Claude Cowork plugin (skill +
+slash commands). Install it from this repository:
+
+```text
+/plugin marketplace add integrityauthority/agentplaybooks
+/plugin install agentplaybooks@agentplaybooks
+```
+
 ## API Overview
 
 ### Public and Unlisted playbook access
@@ -307,6 +330,8 @@ agentplaybooks/
       supabase/            # Supabase client and types
       attachment-validator.ts
       utils.ts
+  packages/
+    cli/                   # AgentPlaybooks CLI + Claude Code plugin
   scripts/                 # Seed and build scripts
   supabase/
     migrations/            # Database migrations
@@ -317,7 +342,7 @@ agentplaybooks/
 
 ## Database Schema
 
-- playbooks: core entity (includes visibility enum: private, public, unlisted)
+- playbooks: core entity (includes visibility enum: private, public, unlisted; persona fields for agent identity and `instructions` for always-on project rules)
 - mcp_server_secrets: encrypted credentials for federated MCP/OpenAPI servers (service-role only)
 - mcp_proxy_audit_logs: owner-readable audit trail for federated calls
 - skills: skill definitions and optional SKILL.md content
@@ -332,7 +357,22 @@ agentplaybooks/
 - profiles: public user profile data
 - playbook_stars: marketplace stars
 
-All tables use Row Level Security (RLS).
+### A note on Row Level Security
+
+RLS is enabled on the tables listed above, but it is **not** the primary
+authorization mechanism at runtime. Almost all API routes query with the
+service-role key, which bypasses RLS; authorization is enforced in application
+code (`src/app/api/_shared/guards.ts`).
+
+RLS *is* load-bearing for the handful of endpoints that read public playbooks
+with the anon key — the MCP manifest (`/api/mcp/:guid`), its tool routes, and
+the public skills/MCP listings. Those depend on the anon `SELECT` policies in
+`supabase/migrations/20260107_permissions_refactor.sql`. Removing or disabling
+those policies breaks the endpoints rather than merely relaxing them.
+
+Policies written against `auth.uid()` are currently inert, because no
+JWT-bearing client performs table queries — the browser talks only to
+`/api/*`, never to Postgres directly.
 
 ## Contributing
 

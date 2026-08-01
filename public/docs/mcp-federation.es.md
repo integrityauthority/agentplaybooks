@@ -67,7 +67,9 @@ Cada `operationId` de OpenAPI se convierte en una herramienta MCP con namespace.
 
 ## Despliegue y seguridad
 
-Configurar `MCP_SECRET_ENCRYPTION_KEY` con un valor aleatorio de al menos 32 caracteres y aplicar `supabase/migrations/20260730_federated_mcp_proxy.sql`. El secreto en claro solo se acepta al escribir, se cifra con AES-GCM y nunca se devuelve.
+Configurar `MCP_SECRET_ENCRYPTION_KEY` con un valor aleatorio de al menos 32 caracteres —preferiblemente una cadena hexadecimal de 64 caracteres, porque el valor se usa como material de clave en bruto en vez de hashearse— y aplicar `supabase/migrations/20260730_federated_mcp_proxy.sql`. El secreto en claro solo se acepta al escribir, se cifra con AES-256-GCM y nunca se devuelve.
+
+Las credenciales de cada servidor se cifran con una clave derivada de ese valor mediante HKDF, usando el id del servidor como salt, y ese id se autentica como parte del texto cifrado. Por eso el material de clave de un servidor no puede descifrar la carga de otro, y una carga copiada a la fila de otro servidor no se descifra en absoluto. Las filas escritas antes de este cambio (sin el prefijo `v2:`) siguen siendo legibles y se actualizan la próxima vez que se guardan los secretos de ese servidor.
 
 `access: "public"` puede permitir que cualquiera genere costes upstream. Se recomienda `playbook_api_key`; el cliente necesita permiso `tools:call` o `full`.
 

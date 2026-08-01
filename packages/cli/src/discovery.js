@@ -46,11 +46,18 @@ export function platformFor(relativePath) {
   const normalized = `/${normalizePath(relativePath).toLowerCase()}`;
   const base = path.basename(relativePath).toLowerCase();
 
-  if (normalized.includes("/.codex/") || base.startsWith("agents.")) return "codex";
-  if (normalized.includes("/.claude/") || base === "claude.md" || base === "claude_desktop_config.json") return "claude";
+  if (normalized.includes("/.codex/")) return "codex";
+  // `AGENTS.md` is the cross-vendor instruction standard (Codex, Hermes and
+  // others read it), so owning a copy says nothing about which tool is in use.
+  // Only a `.codex/` path means Codex; otherwise a project with AGENTS.md would
+  // get a Codex deployment target it never asked for.
+  if (base.startsWith("agents.")) return "portable";
+  // `.mcp.json` is Claude Code's project-scoped MCP configuration file.
+  if (normalized.includes("/.claude/") || base === "claude.md" || base === "claude_desktop_config.json" || base === ".mcp.json") return "claude";
   if (normalized.includes("/.cursor/") || base === ".cursorrules") return "cursor";
   if (normalized.includes("/.github/") || base === "copilot-instructions.md") return "copilot";
   if (normalized.includes("/.gemini/") || base === "gemini.md") return "gemini";
+  if (normalized.includes("/.hermes/")) return "hermes";
   if (normalized.includes("/.agents/")) return "portable";
   return "generic";
 }
@@ -93,10 +100,24 @@ async function walk(root) {
   return files;
 }
 
+/**
+ * Normalize CRLF to LF.
+ *
+ * Line endings are a checkout detail, not a difference in configuration: the
+ * same skill checked out on Windows and on macOS must produce the same digest,
+ * otherwise every mixed-platform team sees phantom drift and every comparison
+ * against remote or platform files reports a phantom conflict. All discovered
+ * text goes through here, so digests, frontmatter parsing, and content
+ * comparisons all operate on LF.
+ */
+export function normalizeText(value) {
+  return value.replace(/\r\n/g, "\n");
+}
+
 async function readText(absolutePath) {
   const buffer = await readFile(absolutePath);
   if (buffer.byteLength > MAX_TEXT_BYTES) return null;
-  return buffer.toString("utf8");
+  return normalizeText(buffer.toString("utf8"));
 }
 
 export async function discover(root) {
@@ -142,6 +163,7 @@ export async function discoverGlobal() {
     { directory: ".claude", platform: "claude" },
     { directory: ".cursor", platform: "cursor" },
     { directory: ".gemini", platform: "gemini" },
+    { directory: ".hermes", platform: "hermes" },
     { directory: ".agents", platform: "portable" },
   ];
   const combined = { root: home, instructions: [], skills: [], mcpConfigs: [] };

@@ -131,9 +131,16 @@ curl -X POST https://apbks.com/api/manage/playbooks \
     "description": "Reviews code for bugs and improvements",
     "is_public": false,
     "persona_name": "Senior Developer",
-    "persona_system_prompt": "You are a senior software developer with 10+ years of experience. Provide thorough, constructive code reviews."
+    "persona_system_prompt": "You are a senior software developer with 10+ years of experience. Provide thorough, constructive code reviews.",
+    "instructions": "# Project rules\n\n- Use pnpm.\n- Run the tests before committing."
   }'
 ```
+
+`persona_system_prompt` is the agent's identity and travels between projects.
+`instructions` holds the always-on operating rules of one project — the content
+local tools keep in `AGENTS.md` or `CLAUDE.md`. Both are stored separately and
+accepted on create and update; a client that needs a single system prompt
+receives them composed persona-first.
 
 Response:
 
@@ -147,6 +154,7 @@ Response:
   "persona_name": "Senior Developer",
   "persona_system_prompt": "You are a senior software developer...",
   "persona_metadata": {},
+  "instructions": "# Project rules\n\n- Use pnpm.\n- Run the tests before committing.",
   "created_at": "2024-01-15T10:00:00Z",
   "updated_at": "2024-01-15T10:00:00Z"
 }

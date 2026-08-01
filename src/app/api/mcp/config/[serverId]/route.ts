@@ -57,7 +57,7 @@ app.put("/", async (c) => {
     if (error) return c.json({ error: error.message }, 400);
   }
   if (body.secrets) {
-    const encrypted = await encryptMcpSecrets(body.secrets);
+    const encrypted = await encryptMcpSecrets(body.secrets, serverId);
     const { error } = await supabase.from("mcp_server_secrets").upsert({
       mcp_server_id: serverId,
       encrypted_payload: encrypted.encryptedPayload,

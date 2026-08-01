@@ -12,6 +12,42 @@ function sourceRef(item) {
   };
 }
 
+// `${VAR}`, `$VAR`, and `env:VAR` are how local agent configs reference a
+// credential without containing it. Collecting those references makes a
+// playbook self-describing about what it needs to run, which is what lets it
+// move between machines and vendors — while the values stay in the
+// environment, a vault, or the platform's encrypted store.
+const ENV_REFERENCE_PATTERNS = [
+  /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g,
+  /(?<![\w$])\$([A-Za-z_][A-Za-z0-9_]*)/g,
+  /^env:([A-Za-z_][A-Za-z0-9_]*)$/g,
+];
+
+function collectEnvReferences(value, found) {
+  if (typeof value === "string") {
+    for (const pattern of ENV_REFERENCE_PATTERNS) {
+      for (const match of value.matchAll(pattern)) found.add(match[1]);
+    }
+    return found;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) collectEnvReferences(item, found);
+    return found;
+  }
+  if (value && typeof value === "object") {
+    for (const item of Object.values(value)) collectEnvReferences(item, found);
+  }
+  return found;
+}
+
+function secretReferences(report) {
+  const found = new Set();
+  for (const server of report.inventory.mcpServers) {
+    collectEnvReferences(server.definition, found);
+  }
+  return [...found].sort().map((name) => ({ name, ref: `env:${name}`, required: true }));
+}
+
 export function createManifest(report) {
   const projectName = path.basename(report.inventory.root);
   const platforms = new Set([
@@ -54,7 +90,7 @@ export function createManifest(report) {
         mode: "disabled",
         writeBack: false,
       },
-      secrets: [],
+      secrets: secretReferences(report),
       targets,
       policies: {
         network: "allowlist",

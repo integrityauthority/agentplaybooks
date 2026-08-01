@@ -15,7 +15,7 @@ AgentPlaybooks solves this by providing a **platform-independent vault** that an
 
 ## Playbook Components
 
-A Playbook combines five core elements that together define an AI agent's complete working environment:
+A Playbook combines the elements that together define an AI agent's complete working environment:
 
 ### 1. Persona - Personality & Style
 
@@ -37,7 +37,35 @@ You:
 - Role-specific behavior (coder, writer, analyst)
 - Custom interaction styles (formal, casual, technical)
 
-### 2. Skills - Knowledge & Capabilities
+### 2. Project Instructions - How This Project Works
+
+The always-on operating rules of one project or workspace: build commands,
+conventions, things not to touch. This is the content local agent tools keep in
+`AGENTS.md` or `CLAUDE.md`, and every session loads it in full.
+
+```markdown
+# Project instructions
+
+- Use pnpm, never npm.
+- Run the test suite before committing.
+- Do not edit anything under `/legacy` without asking.
+```
+
+Instructions and the persona are deliberately separate fields. The persona is
+*who the agent is* and travels with you between projects; instructions are *how
+this project works* and stay with the project. A runtime that needs one system
+prompt composes them persona-first.
+
+Unlike skills, instructions are never selected on demand — they are always in
+context, which is why they belong in their own slot rather than in a skill
+named "main".
+
+**Use cases:**
+- Repository conventions and build commands
+- Review and release rules a whole team shares
+- Guardrails ("never touch production data")
+
+### 3. Skills - Knowledge & Capabilities
 
 Portable SKILL.md instructions and knowledge the agent can load. Skills describe **HOW** to approach a task; executable network operations belong to MCP/OpenAPI integrations.
 
@@ -57,7 +85,7 @@ Portable SKILL.md instructions and knowledge the agent can load. Skills describe
 - Domain expertise (legal, medical, technical)
 - *Coming soon: Attach documents for deeper knowledge*
 
-### 3. MCP Servers - Tools & Integrations
+### 4. MCP Servers - Tools & Integrations
 
 External tools and APIs the agent can access via the [Model Context Protocol](https://modelcontextprotocol.io/). MCP provides a standardized way for AI to use external tools.
 
@@ -95,7 +123,7 @@ External tools and APIs the agent can access via the [Model Context Protocol](ht
 - API integrations
 - Custom tool definitions
 
-### 4. Canvas - Working Documents
+### 5. Canvas - Working Documents
 
 Structured markdown documents that serve as the agent's persistent workspace. Notes, drafts, project files - documents the agent can read and write across sessions.
 
@@ -125,7 +153,7 @@ In Progress - Phase 2
 - Research notes
 - Persistent scratchpads
 
-### 5. Memory - Persistent Context
+### 6. Memory - Persistent Context
 
 Key-value storage for remembering facts, preferences, and state across sessions. The agent's long-term memory for structured data.
 
@@ -150,7 +178,7 @@ Key-value storage for remembering facts, preferences, and state across sessions.
 - Accumulated facts
 - Configuration data
 
-### 6. Secrets - Secure Credentials
+### 7. Secrets - Secure Credentials
 
 Encrypted key-value vault for storing API keys, passwords, and tokens. Values are AES-256-GCM encrypted. By default, they are never exposed in plaintext to the AI agents (Proxy Only). Instead, agents use the `use_secret` MCP tool to inject these credentials into HTTP requests server-side. Users can optionally enable **API Key Reveal** on a per-secret basis if an agent explicitly requires the raw value.
 
@@ -181,6 +209,12 @@ Encrypted key-value vault for storing API keys, passwords, and tokens. Values ar
 │  │ How I act   │  │ What I know │  │ Tools I use │         │
 │  │ & respond   │  │ & can do    │  │ & connect   │         │
 │  └─────────────┘  └─────────────┘  └─────────────┘         │
+│                                                             │
+│  ┌───────────────────────────────────────────────────────┐  │
+│  │                     INSTRUCTIONS                      │  │
+│  │                                                       │  │
+│  │     Always-on rules for THIS project (AGENTS.md)      │  │
+│  └───────────────────────────────────────────────────────┘  │
 │                                                             │
 │  ┌─────────────────────────┐  ┌─────────────────────────┐  │
 │  │         CANVAS          │  │         MEMORY          │  │

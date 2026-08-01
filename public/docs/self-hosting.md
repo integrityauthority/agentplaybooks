@@ -2,6 +2,30 @@
 
 Deploy AgentPlaybooks on your own infrastructure.
 
+> ## Current limitations — read this first
+>
+> *Last verified: 2026-08-01.*
+>
+> **1. There is no baseline migration.** `supabase/migrations/` contains only
+> incremental changes. No `CREATE TABLE` exists for `playbooks`, `skills`,
+> `skill_attachments`, `mcp_servers`, `memories`, `api_keys`, `user_api_keys`,
+> `profiles`, or `playbook_stars`, and no `ENABLE ROW LEVEL SECURITY` for them
+> either. Running the migrations against an empty database fails. Until a
+> baseline lands, take a `supabase db dump --schema-only` from an existing
+> project — it captures the tables, triggers and RLS policies together.
+>
+> **2. "Self-hosted" means running your own Supabase, not just your own
+> Postgres.** Every API route queries the Supabase Data API and authentication
+> is Supabase Auth, so a bare PostgreSQL server is not enough. For an
+> on-premise deployment, run the
+> [self-hosted Supabase stack](https://supabase.com/docs/guides/self-hosting/docker)
+> and point `NEXT_PUBLIC_SUPABASE_URL` at it. The application needs no changes.
+>
+> **3. A bare PostgreSQL container will not do.** `docker-compose.yml` used to
+> ship one; it was removed because the application never queried it, and its
+> init step fed Supabase migrations calling `auth.uid()` into a vanilla
+> `postgres:16-alpine`, which errors out. Run the full Supabase stack instead.
+
 ## Prerequisites
 
 - Node.js 20+
@@ -68,95 +92,44 @@ Set redirect URLs to `https://your-domain.pages.dev/*`
 
 For running on your own servers.
 
-### Microsoft SQL Server database
+### Microsoft SQL Server
 
-The repository contains a dedicated SQL Server 2022 Compose stack and a
-separate Drizzle migration history. Copy the example environment first:
+SQL Server is **not supported**. An experimental Drizzle/SQL Server layer used
+to live here. It was removed because only two functions ever queried through
+it, so `DB_DIALECT=mssql` produced a split-brain deployment — the playbook list
+read from SQL Server while everything else, including all authorization checks,
+still read from Supabase — and it started without error.
 
-```bash
-cp .env.mssql.example .env
-```
+The schemas, migration and Compose stack remain in git history; the last commit
+before removal is `08cb203`, so `git checkout 08cb203 -- src/lib/db drizzle`
+brings them back.
 
-Set a strong `MSSQL_SA_PASSWORD` and a 64-character hexadecimal
-`SECRETS_ENCRYPTION_KEY`, then start the stack:
+Supporting SQL Server properly means migrating every remaining Supabase Data
+API call and replacing Supabase Auth, since GoTrue has no SQL Server
+equivalent. If you need an on-premise database today, run the
+[self-hosted Supabase stack](https://supabase.com/docs/guides/self-hosting/docker)
+instead — the application works against it unchanged.
 
-```bash
-docker compose -f docker-compose.mssql.yml up --build
-```
+### docker-compose.yml and Dockerfile
 
-The stack performs three ordered operations:
+Both live in the repository root; this guide does not duplicate them, so they
+cannot drift out of date here.
 
-1. starts SQL Server and waits for its health check;
-2. creates the configured database if it does not exist;
-3. applies pending migrations before starting AgentPlaybooks.
+`docker-compose.yml` runs the application only. It deliberately does **not**
+ship a PostgreSQL service: the app talks to the Supabase Data API and Auth, not
+to a database directly, so a bare Postgres container would not serve it. Point
+`NEXT_PUBLIC_SUPABASE_URL` at either a hosted project or your own self-hosted
+Supabase stack.
 
-For a database outside Docker, use:
-
-```bash
-export DB_DIALECT=mssql
-export DATABASE_URL='Server=sql.example.internal,1433;Database=agentplaybooks;User Id=agentplaybooks;Password=...;Encrypt=true;TrustServerCertificate=false;'
-npm run db:migrate:mssql:runtime
-npm run db:smoke:mssql
-```
-
-Schema changes are generated independently for each supported database:
-
-```bash
-npm run db:generate:postgres
-npm run db:generate:mssql
-```
-
-> **Current limitation:** the SQL Server schema, connection, migration and
-> smoke-test layer are available, but the ongoing Supabase Data API migration
-> must be completed before every application endpoint can use SQL Server.
-> Authentication is intentionally unchanged in this phase and still uses
-> Supabase Auth.
-
-### docker-compose.yml
-
-```yaml
-version: '3.8'
-
-services:
-  app:
-    build: .
-    ports:
-      - "3000:3000"
-    environment:
-      - NEXT_PUBLIC_SUPABASE_URL=${SUPABASE_URL}
-      - NEXT_PUBLIC_SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
-      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
-    restart: unless-stopped
-```
-
-### Dockerfile
-
-```dockerfile
-FROM node:20-alpine AS builder
-
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci
-COPY . .
-RUN npm run build
-
-FROM node:20-alpine AS runner
-WORKDIR /app
-
-ENV NODE_ENV production
-
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static ./.next/static
-COPY --from=builder /app/public ./public
-
-EXPOSE 3000
-CMD ["node", "server.js"]
-```
+Note that `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` are
+build arguments as well as runtime variables — Next.js bakes them into the
+client bundle. They must be the values the *browser* can reach, and changing
+them requires a rebuild rather than a restart.
 
 ### Run
 
 ```bash
-docker-compose up -d
+docker compose up -d --build
 ```
 
 ## Option 3: Vercel
@@ -170,12 +143,6 @@ While optimized for Cloudflare, the app works on Vercel too.
 **Note:** Some Cloudflare-specific features won't work on Vercel.
 
 ## Database Migrations
-
-### Microsoft SQL Server
-
-Committed SQL Server migrations live under `drizzle/mssql`. Production
-deployments should run `npm run db:migrate:mssql:runtime`; do not use
-`drizzle-kit push` against production databases.
 
 ### Initial Setup
 
@@ -203,7 +170,32 @@ Copy the SQL from `supabase/migrations/initial_schema.sql` and run in Supabase S
 | `NEXT_PUBLIC_SUPABASE_URL` | Yes | Supabase project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | Supabase anon (public) key |
 | `SUPABASE_SERVICE_ROLE_KEY` | Yes | Supabase service role key (secret) |
-| `MCP_SECRET_ENCRYPTION_KEY` | Yes for federated tools | Random value (32+ characters) used to encrypt upstream MCP/OpenAPI credentials |
+| `MCP_SECRET_ENCRYPTION_KEY` | Yes for federated tools | Random value (32+ characters; 64-char hex preferred, used as raw key material) for upstream MCP/OpenAPI credentials. A key is then derived per server via HKDF |
+| `SECRETS_ENCRYPTION_KEY` | Yes for the secrets vault | 64 hexadecimal characters. Rotating it makes existing secrets undecryptable — there is no re-encryption tooling yet. |
+| `ALLOWED_ORIGINS` | No | Comma-separated origins allowed to make credentialed cross-origin API calls. Setting it **replaces** the default list, which is what a self-hosted instance wants — otherwise the project's own domains stay trusted. Unset keeps the previous behaviour. |
+| `SECRETS_REQUIRE_ALLOWED_HOSTS` | No | Set to `true` to refuse outbound use of any secret that has not declared `allowed_hosts`. Off by default. |
+
+### Pinning a secret to specific destinations
+
+`use_secret` and `POST /api/playbooks/:guid/secrets/proxy` inject a decrypted
+credential into a request whose URL the caller supplies. The agent never sees
+the plaintext, but it does choose the destination — so a caller holding a
+`secrets:read` key, including an agent following instructions injected into its
+context, can name any host.
+
+A secret can therefore pin itself:
+
+```bash
+curl -X PUT 'https://your-domain.com/api/playbooks/GUID/secrets/GITHUB_TOKEN' \
+  -H "Authorization: Bearer apb_your_key" \
+  -H "Content-Type: application/json" \
+  -d '{"allowed_hosts": ["api.github.com", "*.githubusercontent.com"]}'
+```
+
+Entries are case-insensitive hostnames. A leading `*.` matches subdomains but
+not the bare domain, so list both if you need both. An unset or empty list means
+any destination, which keeps existing secrets working unchanged; set
+`SECRETS_REQUIRE_ALLOWED_HOSTS=true` to make pinning mandatory on your instance.
 
 ## Custom Domain
 

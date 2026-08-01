@@ -334,13 +334,14 @@ export const PLAYBOOK_TOOLS: McpTool[] = [
   },
   {
     name: "update_playbook",
-    description: "Update the persona/system prompt of this playbook. Handle with extreme care! Requires full or playbooks:write permission.",
+    description: "Update the persona/system prompt or the project instructions of this playbook. Handle with extreme care! Requires full or playbooks:write permission.",
     inputSchema: {
       type: "object",
       properties: {
         persona_name: { type: "string", description: "New persona name" },
         persona_system_prompt: { type: "string", description: "New core system instructions" },
         persona_metadata: { type: "object", description: "New metadata JSON" },
+        instructions: { type: "string", description: "New always-on project instructions (the AGENTS.md / CLAUDE.md content). Kept separate from the persona: the persona is who the agent is, these are the rules of this project." },
       },
     },
   },

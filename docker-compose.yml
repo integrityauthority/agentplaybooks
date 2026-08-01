@@ -1,51 +1,39 @@
 # ============================================
-# AgentPlaybooks - Docker Compose (PostgreSQL)
-# Full-stack deployment with local database
+# AgentPlaybooks - Docker Compose
 # ============================================
+#
+# The application talks to Supabase (Data API + Auth), not to a database
+# directly, so this file runs the app only. Point it at either a hosted
+# Supabase project or your own self-hosted Supabase stack:
+# https://supabase.com/docs/guides/self-hosting/docker
+#
+# A bare PostgreSQL container is not enough and is deliberately not included
+# here -- see public/docs/self-hosting.md.
 
 services:
-  # --- PostgreSQL Database ---
-  postgres:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-      - ./supabase/migrations:/docker-entrypoint-initdb.d:ro
-    environment:
-      POSTGRES_DB: agentplaybooks
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
-    ports:
-      - "5432:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d agentplaybooks"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # --- AgentPlaybooks Application ---
   app:
     build:
       context: .
       args:
+        # Baked into the client bundle at build time, so this must be the URL
+        # the browser can reach. Changing it requires a rebuild, not a restart.
         NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-}
         NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}
     restart: unless-stopped
     ports:
-      - "3000:3000"
-    depends_on:
-      postgres:
-        condition: service_healthy
+      - "${APP_PORT:-3000}:3000"
     environment:
-      # Database (Drizzle ORM)
-      DB_DIALECT: postgres
-      DATABASE_URL: postgresql://postgres:${DB_PASSWORD:-changeme}@postgres:5432/agentplaybooks
-      # Supabase Auth (required for user login)
       NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
       SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
-      # Secrets encryption
+      # Secrets vault (64 hex characters). Rotating this makes existing
+      # secrets undecryptable -- there is no re-encryption tooling yet.
       SECRETS_ENCRYPTION_KEY: ${SECRETS_ENCRYPTION_KEY}
-
-volumes:
-  pgdata:
+      # Required only if you use federated MCP/OpenAPI servers.
+      MCP_SECRET_ENCRYPTION_KEY: ${MCP_SECRET_ENCRYPTION_KEY:-}
+      # Optional. Setting this replaces the default CORS allow-list, which is
+      # what a self-hosted instance wants.
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+      # Optional. "true" refuses outbound use of any secret that has not
+      # declared allowed_hosts.
+      SECRETS_REQUIRE_ALLOWED_HOSTS: ${SECRETS_REQUIRE_ALLOWED_HOSTS:-}

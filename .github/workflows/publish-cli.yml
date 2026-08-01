@@ -1,0 +1,87 @@
+name: Publish CLI
+
+# Publishes packages/cli to npm as @agentplaybooks/cli using npm trusted
+# publishing (OIDC). No npm token is stored anywhere: GitHub mints a short-lived
+# identity token for this workflow, and npm verifies it against the trusted
+# publisher configured on the package. Provenance attestations are generated
+# automatically, so `--provenance` is not passed.
+#
+# One-time setup on npmjs.com, under the package's Settings → Trusted publisher:
+#   Organization or user: integrityauthority
+#   Repository:           agentplaybooks
+#   Workflow filename:    publish-cli.yml
+#   Allowed actions:      npm publish
+#
+# Trusted publishing is configured per package, so the very first release has to
+# be pushed by a human (`npm publish ./packages/cli --access public --tag alpha
+# --otp=<code>`). Every release after that runs here.
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Pack only, do not publish"
+        type: boolean
+        default: true
+  push:
+    tags: ["cli-v*"]
+
+permissions:
+  contents: read
+  id-token: write # lets GitHub mint the OIDC token npm verifies
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: packages/cli
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      # Trusted publishing needs npm >= 11.5.1. Node 24 ships a new enough npm
+      # today; failing loudly beats falling back to a tokenless publish attempt
+      # that would report a confusing auth error.
+      - name: Check npm supports trusted publishing
+        run: |
+          npm_version="$(npm --version)"
+          required="11.5.1"
+          if [ "$(printf '%s\n%s\n' "$required" "$npm_version" | sort -V | head -n1)" != "$required" ]; then
+            echo "npm $npm_version is older than $required; trusted publishing is unavailable." >&2
+            exit 1
+          fi
+          echo "npm $npm_version"
+
+      # The CLI has no dependencies, so its tests run straight from the source.
+      - run: node --test
+
+      - name: Verify the tag matches package.json
+        if: startsWith(github.ref, 'refs/tags/cli-v')
+        run: |
+          tag_version="${GITHUB_REF_NAME#cli-v}"
+          package_version="$(node -p "require('./package.json').version")"
+          if [ "$tag_version" != "$package_version" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match package.json version $package_version." >&2
+            exit 1
+          fi
+
+      - name: Resolve dist-tag
+        id: disttag
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          case "$version" in
+            *-alpha*) echo "tag=alpha" >> "$GITHUB_OUTPUT" ;;
+            *-beta*) echo "tag=beta" >> "$GITHUB_OUTPUT" ;;
+            *-*) echo "tag=next" >> "$GITHUB_OUTPUT" ;;
+            *) echo "tag=latest" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+      - run: npm pack --dry-run
+
+      - name: Publish
+        if: github.event_name == 'push' || inputs.dry_run == false
+        run: npm publish --access public --tag ${{ steps.disttag.outputs.tag }}

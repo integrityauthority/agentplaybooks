@@ -96,7 +96,7 @@
             "properties": {
               "id": { "type": "string" },
               "type": {
-                "enum": ["codex", "claude", "cursor", "copilot", "gemini", "generic-mcp", "ros2", "opcua", "edge-runtime", "enterprise-gateway"]
+                "enum": ["codex", "claude", "cursor", "copilot", "gemini", "antigravity", "hermes", "generic-mcp", "ros2", "opcua", "edge-runtime", "enterprise-gateway"]
               },
               "enabled": { "type": "boolean" },
               "config": { "type": "object" }

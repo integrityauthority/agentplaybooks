@@ -55,9 +55,55 @@ Sync is deliberately not blind two-way copying.
 5. **Apply** only with an explicit `--apply`.
 6. **Verify** generated files and record hashes for the next three-way diff.
 
-The initial CLI implements local manifest planning and atomic manifest writes.
-Platform file generation, remote push/pull, and three-way conflict resolution
-will be added behind this same lifecycle.
+The CLI implements local manifest planning with atomic writes, platform file
+generation for the `claude`, `cursor`, `codex` (ChatGPT), `antigravity`, and
+`hermes` targets (skills and MCP server definitions where the platform has a
+project-scoped location; conflicting definitions are reported and skipped),
+and authenticated remote `pull`/`push` of project instructions, skills, MCP
+servers, and the manifest against the management API using user API keys. Three-way conflict resolution
+with recorded sync-state hashes will be added behind this same lifecycle.
+
+Instructions are a first-class field on a playbook (`playbooks.instructions`),
+kept separate from the persona on purpose: the persona is who the agent is and
+travels between projects, while instructions are the always-on rules of one
+project. A runtime that needs a single system prompt composes them
+persona-first; storage never merges them. They are also not modelled as a skill,
+because skills are selected on demand by description whereas instructions are
+always in context.
+
+Instruction files are not interchangeable across tools, so the CLI resolves them
+by evidence rather than by assumption:
+
+- `AGENTS.md` is the cross-vendor standard and wins when several project-root
+  instruction files exist. Root files that disagree with each other are a
+  conflict; nested instruction files stay local because they scope a
+  subdirectory rather than the project.
+- Claude Code reads `CLAUDE.md` and not `AGENTS.md`, but it supports `@` imports.
+  The `claude` target therefore writes a `CLAUDE.md` containing `@AGENTS.md`
+  instead of a copy: one source of truth cannot drift from itself. An existing
+  `CLAUDE.md` without that import is reported, never rewritten.
+- `AGENTS.md` no longer implies the `codex` platform. Only a `.codex/` path does,
+  otherwise every project holding the vendor-neutral file would get a Codex
+  deployment target it never asked for.
+
+Two further asymmetries are deliberate rather than temporary:
+
+- **The hosted record is richer than any local file.** A hosted MCP server can
+  carry federation settings (timeouts, auth, access, curated tool lists) that no
+  client config expresses. Local files are authoritative for the connection keys
+  only (`command`, `args`, `env`, `url`, `headers`); everything else survives a
+  push untouched. OpenAPI federation servers have no local equivalent at all and
+  are reported on pull rather than half-translated.
+- **The portable store is not a deployment target.** `pull` writes to
+  `.agents/skills/` and `.agents/mcp.json`; a target has to be enabled before
+  anything reaches a tool's own folder. On a machine where the project has no
+  target yet, `sync` reports the agent tools detected for the user and
+  `--target=<types>` enables them explicitly. Detection never enables anything
+  on its own.
+
+Deletion is not mirrored in either direction yet: remote entries missing
+locally are left alone. A `--prune` mode belongs behind the same plan/apply
+gate as everything else.
 
 Safety rules:
 
@@ -65,7 +111,20 @@ Safety rules:
 - Non-interactive mutation requires `agentplaybooks sync --apply`.
 - Existing files are backed up before replacement.
 - Secret values never enter the manifest; only environment, vault, or platform
-  references are allowed.
+  references are allowed. `spec.secrets` is populated from the environment
+  references discovered in local configuration, so a playbook declares what it
+  needs to run without carrying a single credential. Hand-edited entries (a
+  vault ref, `required: false`) win over discovery on later syncs.
+- No CLI command writes a plaintext secret value to disk. `secrets push` reads a
+  value from stdin or a named environment variable — never from argv, which is
+  visible in shell history and in the process list — and requires an explicit
+  typed confirmation. `secrets run` holds values in memory only, for the lifetime
+  of one child process. A generated `.env` was considered and rejected: a
+  credential at rest on a developer machine is the thing this design avoids.
+- Vault access uses a playbook-scoped API key rather than the account-wide user
+  key that `push`/`pull` use, so the credential that can reach secrets is limited
+  to one playbook. This also avoided widening the server's authorization model:
+  the secrets endpoints already accept exactly this credential.
 - Conflicts never silently use last-write-wins.
 - A robot configuration deployment does not authorize physical actuation.
 - Physical actions default to deny and require a separate runtime policy,
@@ -113,10 +172,13 @@ robots, terminals, and spoken links can use the short domain.
 
 ## Delivery sequence
 
-1. Local doctor, JSON output, strict CI mode.
-2. Local manifest plan/apply with backups.
-3. Platform adapters and three-way sync state.
-4. Authenticated remote push/pull and team collaboration.
-5. GitHub Action, health badge, and opt-in aggregate health index.
-6. ROS 2 inventory/validation adapter.
-7. Enterprise policies, approvals, signing, audit, and gateway deployment.
+1. Local doctor, JSON output, strict CI mode. (done)
+2. Local manifest plan/apply with backups. (done)
+3. Platform adapters (claude, cursor, codex, antigravity, hermes: done) and
+   three-way sync state.
+4. Authenticated remote push/pull (done) and team collaboration.
+5. Claude Code plugin: skill + commands shipped inside `packages/cli`,
+   marketplace manifest at the repository root. (done)
+6. GitHub Action, health badge, and opt-in aggregate health index.
+7. ROS 2 inventory/validation adapter.
+8. Enterprise policies, approvals, signing, audit, and gateway deployment.

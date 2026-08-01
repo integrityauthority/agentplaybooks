@@ -3,7 +3,7 @@ import { requireAuth } from "../../_shared/auth";
 import {
   createPlaybook,
   listAccessiblePlaybooks,
-} from "@/lib/db/repositories/playbooks";
+} from "@/lib/repositories/playbooks";
 
 export async function GET(request: NextRequest) {
   const user = await requireAuth(request);
@@ -39,6 +39,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid visibility" }, { status: 400 });
   }
 
+  // Project instructions are optional; accept a string or an explicit null.
+  if (body.instructions !== undefined
+    && body.instructions !== null
+    && typeof body.instructions !== "string") {
+    return NextResponse.json({ error: "Invalid instructions" }, { status: 400 });
+  }
+
   try {
     const playbook = await createPlaybook(user.id, {
       name: body.name.trim(),
@@ -49,6 +56,7 @@ export async function POST(request: NextRequest) {
       config: body.config && typeof body.config === "object"
         ? body.config
         : {},
+      instructions: body.instructions || null,
     });
     return NextResponse.json(playbook, { status: 201 });
   } catch (error) {

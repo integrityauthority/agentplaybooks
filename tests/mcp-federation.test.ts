@@ -161,9 +161,10 @@ describe("MCP federation", () => {
 describe("MCP secret encryption", () => {
   it("round-trips AES-GCM encrypted payloads", async () => {
     const key = "test-key-with-at-least-thirty-two-characters";
-    const encrypted = await encryptMcpSecrets({ token: "secret", headers: { "X-Key": "value" } }, key);
+    const serverId = "12345678-1234-1234-1234-123456789abc";
+    const encrypted = await encryptMcpSecrets({ token: "secret", headers: { "X-Key": "value" } }, serverId, key);
     expect(encrypted.encryptedPayload).not.toContain("secret");
-    await expect(decryptMcpSecrets(encrypted.encryptedPayload, encrypted.iv, key))
+    await expect(decryptMcpSecrets(encrypted.encryptedPayload, encrypted.iv, serverId, key))
       .resolves.toEqual({ token: "secret", headers: { "X-Key": "value" } });
   });
 });

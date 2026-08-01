@@ -31,6 +31,9 @@ export type PlaybooksRow = {
   persona_name: string | null;
   persona_system_prompt: string | null;
   persona_metadata: Record<string, unknown> | null;
+  // Always-on project instructions (AGENTS.md / CLAUDE.md content). The persona
+  // says who the agent is; this says how this project works.
+  instructions: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -358,15 +361,22 @@ export type SecretsRow = {
   last_used_at: string | null;
   use_count: number;
   allow_api_key_reveal: boolean;
+  /**
+   * Optional hostname allow-list for outbound use of this secret.
+   * NULL/empty means any destination (the historical behaviour).
+   */
+  allowed_hosts: string[] | null;
   created_by: string | null;
   updated_by: string | null;
   created_at: string;
   updated_at: string;
 };
 
-export type SecretsInsert = Omit<SecretsRow, 'id' | 'use_count' | 'created_at' | 'updated_at' | 'rotated_at' | 'last_used_at'> & {
+export type SecretsInsert = Omit<SecretsRow, 'id' | 'use_count' | 'created_at' | 'updated_at' | 'rotated_at' | 'last_used_at' | 'allowed_hosts'> & {
   rotated_at?: string | null;
   last_used_at?: string | null;
+  // Optional on insert: an unset allow-list keeps the previous behaviour.
+  allowed_hosts?: string[] | null;
 };
 export type SecretsUpdate = Partial<Omit<SecretsRow, 'id' | 'playbook_id' | 'created_at'>>;
 
@@ -382,6 +392,7 @@ export type SecretMetadata = {
   last_used_at: string | null;
   use_count: number;
   allow_api_key_reveal: boolean;
+  allowed_hosts: string[];
   created_at: string;
   updated_at: string;
 };

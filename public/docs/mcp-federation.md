@@ -86,7 +86,9 @@ The generated OpenAPI export exposes the same operation at `POST /api/mcp/PLAYBO
 
 ## Secrets and deployment
 
-Set `MCP_SECRET_ENCRYPTION_KEY` to a random value of at least 32 characters. Apply `supabase/migrations/20260730_federated_mcp_proxy.sql`. Secret plaintext is accepted only on write, encrypted with AES-GCM, and never returned by the API.
+Set `MCP_SECRET_ENCRYPTION_KEY` to a random value of at least 32 characters — a 64-character hex string is preferred, because it is used as raw key material instead of being hashed. Apply `supabase/migrations/20260730_federated_mcp_proxy.sql`. Secret plaintext is accepted only on write, encrypted with AES-256-GCM, and never returned by the API.
+
+Each server's credentials are encrypted with a key derived from that value via HKDF, salted with the server's id, and the id is authenticated as part of the ciphertext. One server's key material therefore cannot decrypt another's payload, and a payload copied into a different server row will not decrypt at all. Rows written before this change (no `v2:` prefix) are still readable and are upgraded the next time that server's secrets are saved.
 
 `access: "public"` allows anyone who can access the public playbook to incur upstream calls. Omitted access and `playbook_api_key` both require a playbook key with `tools:call` or `full` permission.
 

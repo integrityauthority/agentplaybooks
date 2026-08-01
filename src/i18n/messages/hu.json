@@ -216,7 +216,20 @@
     "forking": "Másolás...",
     "forked": "Másolva!",
     "forkSuccess": "Playbook másolva a gyűjteményedbe",
-    "signInToFork": "Jelentkezz be a playbook másolásához"
+    "signInToFork": "Jelentkezz be a playbook másolásához",
+    "instructions": {
+      "title": "Projekt Utasítások",
+      "badge": "AGENTS.md / CLAUDE.md",
+      "helper": "A persona azt írja le, hogy ki az ügynök; az utasítások azt, hogyan működik ez a projekt. Ezek mindig érvényben vannak, mint egy AGENTS.md vagy CLAUDE.md fájl a repóban.",
+      "label": "Utasítások (Markdown)",
+      "placeholder": "# Projekt utasítások\n\n## Build és tesztelés\n- Minden commit előtt futtasd az `npm run build` parancsot\n\n## Konvenciók\n- Osztályok helyett funkciókat használj",
+      "characterCount": "{count} karakter",
+      "unsaved": "nincs mentve",
+      "saving": "mentés...",
+      "copy": "Utasítások másolása",
+      "saveError": "Az utasításokat nem sikerült elmenteni. A módosításaid megvannak, kérlek próbáld újra.",
+      "tip": "A módosítások automatikusan mentődnek. A Markdown támogatott - használj címsorokat és rövid felsorolásokat, hogy az ügynök könnyen követhesse a szabályokat."
+    }
   },
   "canvas": {
     "title": "Canvas Dokumentumok",

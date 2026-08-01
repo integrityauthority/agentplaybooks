@@ -50,7 +50,7 @@ app.post("/", async (c) => {
     .select("encrypted_payload, iv")
     .eq("mcp_server_id", server.id)
     .maybeSingle();
-  const secrets = secretRow ? await decryptMcpSecrets(secretRow.encrypted_payload, secretRow.iv) : {};
+  const secrets = secretRow ? await decryptMcpSecrets(secretRow.encrypted_payload, secretRow.iv, server.id) : {};
   const requestId = c.req.header("cf-ray") || c.req.header("x-request-id") || crypto.randomUUID();
   const audit = async (event: FederationAuditEvent) => {
     await service.from("mcp_proxy_audit_logs").insert({

@@ -454,9 +454,15 @@ Returns:
   "persona_name": "Expert Coder",
   "persona_system_prompt": "You are a helpful coding assistant...",
   "persona_metadata": { "avatar": "👨‍💻" },
+  "instructions": "# Project rules\n\n- Use pnpm.",
   ...
 }
 ```
+
+`persona_system_prompt` carries the agent's identity; `instructions` carries the
+always-on rules of this project (`AGENTS.md` / `CLAUDE.md` content). They are
+stored as separate fields, and clients that need one system prompt receive them
+composed persona-first.
 
 ### List Personas (Backward Compatibility)
 

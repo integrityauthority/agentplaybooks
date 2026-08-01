@@ -1,5 +1,6 @@
 import { mkdir, readFile, rename, writeFile, copyFile } from "node:fs/promises";
 import path from "node:path";
+import { ADAPTER_TARGET_TYPES, applyAdapters, detectInstalledTargets, planAdapters } from "./adapters.js";
 import { runDoctor } from "./doctor.js";
 import { comparableManifest, createManifest } from "./manifest.js";
 
@@ -25,7 +26,7 @@ async function atomicWrite(manifestPath, manifest) {
   await rename(tempPath, manifestPath);
 }
 
-export async function planSync(target) {
+export async function planSync(target, options = {}) {
   const report = await runDoctor(target);
   const manifestPath = path.join(report.inventory.root, MANIFEST_NAME);
   const existing = await readExisting(manifestPath);
@@ -33,15 +34,54 @@ export async function planSync(target) {
   const manifest = existing?.apiVersion === discovered.apiVersion && existing?.kind === discovered.kind
     ? mergeExisting(discovered, existing)
     : discovered;
-  const changed = !existing || JSON.stringify(comparableManifest(existing)) !== JSON.stringify(comparableManifest(manifest));
+  enableRequestedTargets(manifest, options.targets ?? []);
+  const manifestChanged = !existing || JSON.stringify(comparableManifest(existing)) !== JSON.stringify(comparableManifest(manifest));
+  const adapters = await planAdapters(report, manifest.spec.targets, options);
+
+  // A project pulled onto a fresh machine holds only the portable store, which
+  // is not a deployment target — without a hint, sync would look broken.
+  const writableTargets = manifest.spec.targets
+    .filter((target) => target.enabled && ADAPTER_TARGET_TYPES.includes(target.type));
+  const suggestedTargets = writableTargets.length === 0
+    ? (await detectInstalledTargets(options.homedir)).filter(
+      (type) => !manifest.spec.targets.some((target) => target.type === type && target.enabled),
+    )
+    : [];
+
   return {
     report,
     manifest,
     manifestPath,
     existing,
-    changed,
-    action: existing ? (changed ? "update" : "none") : "create",
+    manifestChanged,
+    changed: manifestChanged || adapters.actions.length > 0,
+    action: existing ? (manifestChanged ? "update" : "none") : "create",
+    fileActions: adapters.actions,
+    conflicts: adapters.conflicts,
+    suggestedTargets,
   };
+}
+
+/**
+ * Newly discovered secret references are added, but an entry the user has
+ * edited (a vault ref instead of an env var, `required: false`) always wins:
+ * discovery only knows what the config files mention.
+ */
+function mergeSecrets(discovered, existing) {
+  const merged = new Map(discovered.map((secret) => [secret.name, secret]));
+  for (const secret of existing ?? []) merged.set(secret.name, secret);
+  return [...merged.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function enableRequestedTargets(manifest, requested) {
+  for (const type of requested) {
+    if (!ADAPTER_TARGET_TYPES.includes(type)) {
+      throw new Error(`Unknown target '${type}'. Known targets: ${ADAPTER_TARGET_TYPES.join(", ")}.`);
+    }
+    const existingTarget = manifest.spec.targets.find((target) => target.type === type);
+    if (existingTarget) existingTarget.enabled = true;
+    else manifest.spec.targets.push({ id: type, type, enabled: true, config: {} });
+  }
 }
 
 function mergeExisting(discovered, existing) {
@@ -58,7 +98,7 @@ function mergeExisting(discovered, existing) {
     spec: {
       ...discovered.spec,
       memory: existing.spec?.memory ?? discovered.spec.memory,
-      secrets: existing.spec?.secrets ?? discovered.spec.secrets,
+      secrets: mergeSecrets(discovered.spec.secrets, existing.spec?.secrets),
       targets: [...detectedTargets.values()],
       policies: existing.spec?.policies ?? discovered.spec.policies,
       governance: existing.spec?.governance ?? discovered.spec.governance,
@@ -67,28 +107,60 @@ function mergeExisting(discovered, existing) {
 }
 
 export async function applySync(plan) {
-  if (!plan.changed) return { applied: false, backupPath: null };
+  if (!plan.changed) return { applied: false, backupPath: null, written: [], backups: [] };
+
+  const backupDirectory = path.join(path.dirname(plan.manifestPath), ".agentplaybooks", "backups", timestampForPath());
 
   let backupPath = null;
-  if (plan.existing) {
-    const backupDirectory = path.join(path.dirname(plan.manifestPath), ".agentplaybooks", "backups", timestampForPath());
+  if (plan.manifestChanged && plan.existing) {
     await mkdir(backupDirectory, { recursive: true, mode: 0o700 });
     backupPath = path.join(backupDirectory, MANIFEST_NAME);
     await copyFile(plan.manifestPath, backupPath);
   }
-  await atomicWrite(plan.manifestPath, plan.manifest);
-  return { applied: true, backupPath };
+  if (plan.manifestChanged) {
+    await atomicWrite(plan.manifestPath, plan.manifest);
+  }
+  const { written, backups } = await applyAdapters(plan.fileActions, backupDirectory);
+  return { applied: true, backupPath, written, backups };
+}
+
+function printTargetSuggestion(plan) {
+  if (plan.suggestedTargets.length === 0) return;
+  console.log("");
+  console.log("No deployment target is enabled, so no platform files can be written.");
+  console.log(`Agent tools detected for this user: ${plan.suggestedTargets.join(", ")}.`);
+  console.log(`Enable one with, for example: agentplaybooks sync --target=${plan.suggestedTargets[0]} --apply`);
 }
 
 export function printSyncPlan(plan) {
-  if (plan.action === "none") {
-    console.log(`${MANIFEST_NAME} is already in sync.`);
+  if (!plan.changed && plan.conflicts.length === 0) {
+    console.log(`${MANIFEST_NAME} and platform files are already in sync.`);
+    printTargetSuggestion(plan);
     return;
   }
-  console.log(`Sync plan: ${plan.action} ${plan.manifestPath}`);
-  console.log(`  ${plan.manifest.spec.instructions.length} instruction file(s)`);
-  console.log(`  ${plan.manifest.spec.skills.length} skill(s)`);
-  console.log(`  ${plan.manifest.spec.connections.mcp.length} MCP server definition(s)`);
-  console.log(`  ${plan.manifest.spec.targets.length} detected deployment target(s)`);
-  console.log("No files have been changed. Run again with --apply to write the manifest.");
+  if (plan.manifestChanged) {
+    console.log(`Sync plan: ${plan.action} ${plan.manifestPath}`);
+    console.log(`  ${plan.manifest.spec.instructions.length} instruction file(s)`);
+    console.log(`  ${plan.manifest.spec.skills.length} skill(s)`);
+    console.log(`  ${plan.manifest.spec.connections.mcp.length} MCP server definition(s)`);
+    console.log(`  ${plan.manifest.spec.targets.length} deployment target(s)`);
+    if (plan.manifest.spec.secrets.length > 0) {
+      console.log(`  ${plan.manifest.spec.secrets.length} secret reference(s): ${plan.manifest.spec.secrets.map((secret) => secret.name).join(", ")}`);
+    }
+  }
+  for (const action of plan.fileActions) {
+    if (action.kind === "skill" || action.kind === "instructions") {
+      console.log(`  [${action.target}] ${action.action} ${action.path} (from ${action.from})`);
+    } else {
+      console.log(`  [${action.target}] ${action.action} ${action.path} (+ ${action.servers.join(", ")})`);
+    }
+  }
+  for (const item of plan.conflicts) {
+    console.log(`  [conflict:${item.target}] ${item.kind} '${item.name}': ${item.reason}`);
+    for (const source of item.sources) console.log(`    - ${source}`);
+  }
+  if (plan.changed) {
+    console.log("No files have been changed. Run again with --apply to write these changes.");
+  }
+  printTargetSuggestion(plan);
 }

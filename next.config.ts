@@ -21,10 +21,6 @@ const nextConfig: NextConfig = {
   // Cloudflare Pages compatible settings
   output: "standalone",
   poweredByHeader: false,
-  // The on-prem build loads the native Node.js SQL Server driver at runtime.
-  // Keeping it external lets Next.js standalone tracing copy its complete
-  // dependency tree (including tedious) into the runner image.
-  serverExternalPackages: ["mssql"],
 
   async headers() {
     return [

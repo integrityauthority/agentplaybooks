@@ -25,6 +25,11 @@ test("sync is plan-only until apply and writes a safe manifest", async () => {
         command: "npx",
         args: ["deploy-mcp"],
         env: { API_KEY: "${DEPLOY_API_KEY}" }
+      },
+      // A server whose URL embeds a literal token: the manifest records the
+      // connection, never the credential itself.
+      search: {
+        url: "https://mcp.example.com/http?token=sk-LITERALVALUE1234567890"
       }
     }
   }));
@@ -44,7 +49,14 @@ test("sync is plan-only until apply and writes a safe manifest", async () => {
   assert.equal(manifest.spec.policies.physicalActions, "deny");
   assert.equal(manifest.spec.governance.environment, "draft");
   assert.equal(manifest.spec.skills[0].name, "release");
-  assert.doesNotMatch(manifestText, /DEPLOY_API_KEY/);
+
+  // Secret values never enter the manifest; the reference by name does, so the
+  // playbook can state what it needs on another machine.
+  assert.doesNotMatch(manifestText, /sk-LITERALVALUE1234567890/);
+  assert.doesNotMatch(manifestText, /"npx"/);
+  assert.deepEqual(manifest.spec.secrets, [
+    { name: "DEPLOY_API_KEY", ref: "env:DEPLOY_API_KEY", required: true },
+  ]);
 });
 
 test("sync backs up an existing manifest before update", async () => {

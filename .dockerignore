@@ -9,5 +9,4 @@ node_modules
 !public/**/*.md
 .env*
 .DS_Store
-drizzle
 coverage
