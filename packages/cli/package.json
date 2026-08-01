@@ -1,6 +1,6 @@
 {
   "name": "@agentplaybooks/cli",
-  "version": "0.1.0-alpha.0",
+  "version": "0.1.0-alpha.1",
   "description": "Audit and synchronize portable AI agent playbooks",
   "type": "module",
   "license": "PolyForm-Noncommercial-1.0.0",
@@ -11,6 +11,9 @@
   "files": [
     "bin",
     "src",
+    ".claude-plugin",
+    "commands",
+    "skills",
     "README.md"
   ],
   "engines": {

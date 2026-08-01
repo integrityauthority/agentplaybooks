@@ -21,6 +21,12 @@ export const docsEntries: DocEntry[] = [
     section: "guides",
   },
   {
+    slug: "cli",
+    title: "CLI & Editor Plugins",
+    description: "Doctor, sync, pull/push, and the Claude Code plugin",
+    section: "guides",
+  },
+  {
     slug: "architecture",
     title: "Architecture",
     description: "System design and components",

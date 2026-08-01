@@ -47,10 +47,12 @@ export function platformFor(relativePath) {
   const base = path.basename(relativePath).toLowerCase();
 
   if (normalized.includes("/.codex/") || base.startsWith("agents.")) return "codex";
-  if (normalized.includes("/.claude/") || base === "claude.md" || base === "claude_desktop_config.json") return "claude";
+  // `.mcp.json` is Claude Code's project-scoped MCP configuration file.
+  if (normalized.includes("/.claude/") || base === "claude.md" || base === "claude_desktop_config.json" || base === ".mcp.json") return "claude";
   if (normalized.includes("/.cursor/") || base === ".cursorrules") return "cursor";
   if (normalized.includes("/.github/") || base === "copilot-instructions.md") return "copilot";
   if (normalized.includes("/.gemini/") || base === "gemini.md") return "gemini";
+  if (normalized.includes("/.hermes/")) return "hermes";
   if (normalized.includes("/.agents/")) return "portable";
   return "generic";
 }
@@ -142,6 +144,7 @@ export async function discoverGlobal() {
     { directory: ".claude", platform: "claude" },
     { directory: ".cursor", platform: "cursor" },
     { directory: ".gemini", platform: "gemini" },
+    { directory: ".hermes", platform: "hermes" },
     { directory: ".agents", platform: "portable" },
   ];
   const combined = { root: home, instructions: [], skills: [], mcpConfigs: [] };
