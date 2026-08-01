@@ -257,11 +257,11 @@ export default function PlaybookEditorPage({ params }: { params: Promise<{ id: s
   }, []);
 
   const handleAddSkill = async () => {
-    const defaultName = `new_skill_${skills.length + 1}`;
+    const defaultName = `new-skill-${skills.length + 1}`;
 
     const data = await storage.addSkill({
       name: defaultName,
-      description: "",
+      description: "New skill draft. Describe what it does and when the agent should use it before sharing.",
       content: null,
       licence: null,
       publisher_id: currentUserId,
@@ -2020,11 +2020,11 @@ export default function PlaybookEditorPage({ params }: { params: Promise<{ id: s
                 {/* Danger Zone */}
                 {isOwner && <div className={cn(
                   "p-5 rounded-xl",
-                  "bg-red-50 dark:bg-gradient-to-br dark:from-red-950/30 dark:to-red-900/20",
-                  "border border-red-200 dark:border-red-900/30"
+                  "bg-red-50 dark:bg-red-950/25",
+                  "border border-red-200 dark:border-red-500/25"
                 )}>
-                  <h3 className="font-medium text-red-600 dark:text-red-400 mb-2">Danger Zone</h3>
-                  <p className="text-sm text-red-700 dark:text-slate-400 mb-4">
+                  <h3 className="font-medium text-red-700 dark:text-red-300 mb-2">Danger Zone</h3>
+                  <p className="text-sm text-red-800/80 dark:text-slate-300 mb-4">
                     Deleting this playbook will remove all associated personas, skills, MCP servers, memories, and API keys.
                   </p>
                   <button
@@ -2040,7 +2040,7 @@ export default function PlaybookEditorPage({ params }: { params: Promise<{ id: s
                       }
                       window.location.href = "/dashboard";
                     }}
-                    className="px-4 py-2 bg-red-100 dark:bg-red-600/20 text-red-700 dark:text-red-400 border border-red-300 dark:border-red-500/30 rounded-lg hover:bg-red-200 dark:hover:bg-red-600/30 transition-colors font-medium"
+                    className="px-4 py-2 bg-red-600 text-white border border-red-700 rounded-lg hover:bg-red-700 dark:bg-red-500/15 dark:text-red-300 dark:border-red-400/30 dark:hover:bg-red-500/25 transition-colors font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/60 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-[#0a0f1a]"
                   >
                     Delete Playbook
                   </button>
@@ -2251,25 +2251,30 @@ export default function PlaybookEditorPage({ params }: { params: Promise<{ id: s
         {showMcpRegistry && playbook && (
           <McpRegistrySearch
             onAdd={async (server) => {
-              // Call the instantiate API
-              const response = await authFetch("/api/mcp-registry/instantiate", {
+              if (!server.installable || !server.transport_type) {
+                throw new Error(server.install_error || "This registry entry has no supported transport.");
+              }
+              const response = await authFetch(`/api/manage/playbooks/${playbook.id}/mcp-servers`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                  registry_id: server.registry_id,
-                  playbook_id: playbook.id,
+                  name: server.name,
+                  description: server.description,
+                  tools: [],
+                  resources: [],
+                  transport_type: server.transport_type,
+                  transport_config: server.transport_config,
                 }),
               });
 
-              const result = await response.json();
+              const result = await response.json().catch(() => null);
 
-              if (result.success && result.mcp_server) {
-                // Add to local state
-                setMcpServers([...mcpServers, result.mcp_server]);
-              } else {
-                console.error("Failed to add MCP server:", result.error);
-                throw new Error(result.error);
+              if (!response.ok || !result) {
+                const message = result?.error || `Failed to add MCP server (HTTP ${response.status}).`;
+                console.error("Failed to add MCP server:", message);
+                throw new Error(message);
               }
+              setMcpServers((current) => [...current, result]);
             }}
             onClose={() => setShowMcpRegistry(false)}
           />

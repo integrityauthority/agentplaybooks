@@ -287,7 +287,7 @@ export function formatAsOpenAPI(playbook: PlaybookWithExports) {
                     description: "A skill defines a capability or rule for solving tasks",
                     properties: {
                         id: { type: "string", format: "uuid" },
-                        name: { type: "string", description: "Skill name (snake_case)" },
+                        name: { type: "string", description: "Agent Skills-compatible name (lowercase kebab-case)" },
                         description: { type: "string", description: "What this skill does" },
                         definition: { type: "object", properties: { parameters: { type: "object" } } },
                         examples: { type: "array", items: { type: "object" } },

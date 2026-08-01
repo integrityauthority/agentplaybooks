@@ -14,6 +14,7 @@ import { getAuthenticatedUser as getAuthenticatedUserFromRequest } from "@/app/a
 import { getServiceSupabase, getSupabase } from "@/app/api/_shared/supabase";
 import { checkPlaybookWriteAccess, getPlaybookAccessRole } from "@/app/api/_shared/guards";
 import { buildPlaybookUpdate } from "@/lib/playbook-access";
+import { validateAgentSkillDescription, validateAgentSkillName } from "@/lib/agent-skills";
 
 // User API Key with user_id
 type UserApiKeyData = UserApiKeysRow & { user_id: string };
@@ -448,9 +449,10 @@ app.post("/playbooks/:id/skills", async (c) => {
   const body = await c.req.json();
   const { name, description, content, licence } = body;
 
-  if (!name) {
-    return c.json({ error: "Name is required" }, 400);
-  }
+  const nameError = validateAgentSkillName(name);
+  if (nameError) return c.json({ error: nameError }, 400);
+  const descriptionError = validateAgentSkillDescription(description);
+  if (descriptionError) return c.json({ error: descriptionError }, 400);
 
   const supabase = getServiceSupabase();
 
@@ -1351,9 +1353,10 @@ app.post("/manage/playbooks/:id/skills", async (c) => {
   const body = await c.req.json();
   const { name, description, content, licence } = body;
 
-  if (!name) {
-    return c.json({ error: "Name is required" }, 400);
-  }
+  const nameError = validateAgentSkillName(name);
+  if (nameError) return c.json({ error: nameError }, 400);
+  const descriptionError = validateAgentSkillDescription(description);
+  if (descriptionError) return c.json({ error: descriptionError }, 400);
 
   const supabase = getServiceSupabase();
 
@@ -1392,6 +1395,15 @@ app.put("/manage/playbooks/:id/skills/:sid", async (c) => {
 
   const body = await c.req.json();
   const supabase = getServiceSupabase();
+
+  if (body.name !== undefined) {
+    const nameError = validateAgentSkillName(body.name);
+    if (nameError) return c.json({ error: nameError }, 400);
+  }
+  if (body.description !== undefined) {
+    const descriptionError = validateAgentSkillDescription(body.description);
+    if (descriptionError) return c.json({ error: descriptionError }, 400);
+  }
 
   // Whitelist allowed fields to prevent mass-assignment
   const updateData: Record<string, unknown> = {};
@@ -2151,7 +2163,7 @@ app.get("/manage/openapi.json", (c) => {
               "application/json": {
                 schema: {
                   type: "object",
-                  required: ["name"],
+                  required: ["name", "description"],
                   properties: {
                     name: { type: "string", description: "Playbook name" },
                     description: { type: "string", description: "Playbook description" },
@@ -2269,7 +2281,7 @@ app.get("/manage/openapi.json", (c) => {
                   type: "object",
                   required: ["name"],
                   properties: {
-                    name: { type: "string", description: "Skill name (use snake_case)" },
+                    name: { type: "string", description: "Agent Skills-compatible name (lowercase kebab-case)" },
                     description: { type: "string", description: "What the skill does" },
                     definition: {
                       type: "object",
@@ -2438,7 +2450,7 @@ app.get("/manage/openapi.json", (c) => {
           description: "A skill defines a capability or rule for solving tasks",
           properties: {
             id: { type: "string", format: "uuid" },
-            name: { type: "string", description: "Skill name (snake_case)" },
+            name: { type: "string", description: "Agent Skills-compatible name (lowercase kebab-case)" },
             description: { type: "string", description: "What this skill does" },
             definition: { type: "object", description: "Skill definition with parameters schema" },
             examples: { type: "array", description: "Example usages" },

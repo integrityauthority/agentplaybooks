@@ -5,6 +5,7 @@ import { runDoctor } from "./doctor.js";
 import { normalizeText } from "./discovery.js";
 import { createManifest, comparableManifest } from "./manifest.js";
 import { canonicalJson } from "./adapters.js";
+import { isMap, parseDocument, stringify } from "yaml";
 
 export const DEFAULT_BASE_URL = "https://agentplaybooks.ai";
 const LINK_FILE = [".agentplaybooks", "remote.json"];
@@ -123,9 +124,37 @@ async function writeLink(root, link) {
 
 function skillFileContent(skill) {
   const content = normalizeText(skill.content ?? "");
-  if (content.startsWith("---")) return content.endsWith("\n") ? content : `${content}\n`;
-  const description = (skill.description ?? "").replace(/\r?\n/g, " ").trim();
-  return `---\nname: ${skill.name}\ndescription: ${description}\n---\n\n${content}${content.endsWith("\n") ? "" : "\n"}`;
+  const match = content.match(/^---\n([\s\S]*?)\n---(?:\n|$)/);
+  let body = content;
+  let frontmatter = {};
+  if (match) {
+    const document = parseDocument(match[1], { strict: true, uniqueKeys: true });
+    if (document.errors.length === 0 && isMap(document.contents)) {
+      frontmatter = document.toJS();
+      body = content.slice(match[0].length);
+    }
+  }
+
+  const remoteDescription = typeof skill.description === "string" ? skill.description.trim() : "";
+  const existingDescription = typeof frontmatter.description === "string" ? frontmatter.description.trim() : "";
+  const description = (remoteDescription || existingDescription).replace(/\r?\n/g, " ");
+  if (!description) return null;
+
+  const frontmatterAlreadyMatches = match
+    && frontmatter.name === skill.name
+    && existingDescription === description
+    && (!skill.licence || frontmatter.license === skill.licence);
+  if (frontmatterAlreadyMatches) return content.endsWith("\n") ? content : `${content}\n`;
+
+  const normalizedFrontmatter = {
+    ...frontmatter,
+    name: skill.name,
+    description,
+    ...(skill.licence && frontmatter.license === undefined ? { license: skill.licence } : {}),
+  };
+  delete normalizedFrontmatter.licence;
+  const yaml = stringify(normalizedFrontmatter, { lineWidth: 0 }).trimEnd();
+  return `---\n${yaml}\n---\n\n${body}${body.endsWith("\n") ? "" : "\n"}`;
 }
 
 async function readLocalFile(root, relativePath) {
@@ -238,6 +267,10 @@ export async function planPull(root, ref, { url, apiKey, fetchImpl } = {}) {
     }
     const relativePath = `.agents/skills/${skill.name}/SKILL.md`;
     const content = skillFileContent(skill);
+    if (content === null) {
+      conflicts.push({ kind: "skill", name: skill.name, reason: "Remote skill has no Agent Skills-compatible description." });
+      continue;
+    }
     const existing = await readLocalFile(root, relativePath);
     if (existing === null) {
       actions.push({ kind: "skill", name: skill.name, action: "create", path: relativePath, content });

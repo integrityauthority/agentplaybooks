@@ -69,6 +69,12 @@ export const docsEntries: DocEntry[] = [
     section: "guides",
   },
   {
+    slug: "mcp-registry-publishing",
+    title: "MCP Registry Publishing",
+    description: "Publish the AgentPlaybooks remote MCP server",
+    section: "guides",
+  },
+  {
     slug: "api-reference",
     title: "API Reference",
     description: "Complete API documentation",

@@ -57,8 +57,10 @@ export function McpServerEditor({ mcpServer, storage, onUpdate, onDelete, readOn
   const [resourcesJson, setResourcesJson] = useState(
     JSON.stringify(mcpServer.resources || [], null, 2)
   );
-  const [transportType, setTransportType] = useState<"http" | "sse" | "openapi">(
-    mcpServer.transport_type === "openapi" || mcpServer.transport_type === "sse" ? mcpServer.transport_type : "http"
+  const [transportType, setTransportType] = useState<"stdio" | "http" | "sse" | "openapi">(
+    mcpServer.transport_type === "stdio" || mcpServer.transport_type === "openapi" || mcpServer.transport_type === "sse"
+      ? mcpServer.transport_type
+      : "http"
   );
   const [transportConfigJson, setTransportConfigJson] = useState(
     JSON.stringify(mcpServer.transport_config || DEFAULT_TRANSPORT_CONFIG, null, 2)
@@ -418,10 +420,11 @@ export function McpServerEditor({ mcpServer, storage, onUpdate, onDelete, readOn
                     <label className="block text-sm font-medium text-slate-400 mb-2">Transport</label>
                     <select
                       value={transportType}
-                      onChange={(event) => setTransportType(event.target.value as "http" | "sse" | "openapi")}
+                      onChange={(event) => setTransportType(event.target.value as "stdio" | "http" | "sse" | "openapi")}
                       disabled={isReadOnly}
                       className="w-full rounded-lg bg-slate-900/70 border border-slate-700/50 px-3 py-2 text-slate-200"
                     >
+                      <option value="stdio">Local package (stdio)</option>
                       <option value="http">MCP Streamable HTTP</option>
                       <option value="sse">MCP HTTP/SSE response</option>
                       <option value="openapi">OpenAPI</option>
@@ -440,7 +443,7 @@ export function McpServerEditor({ mcpServer, storage, onUpdate, onDelete, readOn
                       placeholder={'{"url":"https://example.com/mcp","timeout_ms":15000,"access":"playbook_api_key","auth":{"type":"bearer","token_secret":"token"}}'}
                     />
                     <p className="mt-2 text-xs text-slate-500">
-                      OpenAPI connections may use <code>spec_url</code> and <code>base_url</code>. Private and local network targets are blocked.
+                      Stdio connections use <code>command</code>, <code>args</code>, and optional <code>env</code>. OpenAPI connections may use <code>spec_url</code> and <code>base_url</code>. Private and local network targets are blocked.
                     </p>
                   </div>
                   {!isReadOnly && (

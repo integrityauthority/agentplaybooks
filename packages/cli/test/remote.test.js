@@ -145,6 +145,33 @@ test("pull plans remote skills into .agents/skills and apply writes them with a 
   assert.equal(followUp.conflicts.length, 0);
 });
 
+test("pull emits valid YAML frontmatter for descriptions containing YAML punctuation", async () => {
+  const root = await fixture("agentplaybooks-pull-yaml-");
+  const state = {
+    playbooks: [{
+      id: "11111111-2222-4333-8444-555555555555",
+      guid: "abc123",
+      name: "Team playbook",
+      config: {},
+      skills: [{
+        id: "s1",
+        name: "code-review",
+        description: "Use when: a pull request needs review.",
+        content: "# Review\nCheck the diff.\n",
+      }],
+    }],
+  };
+  const { fetchImpl } = fakeApi(state);
+
+  const plan = await planPull(root, "abc123", { url: URL_BASE, apiKey: API_KEY, fetchImpl });
+  await applyPull(root, plan);
+  const content = await readFile(path.join(root, ".agents", "skills", "code-review", "SKILL.md"), "utf8");
+
+  assert.match(content, /name: code-review/);
+  assert.match(content, /description: "Use when: a pull request needs review\."/);
+  assert.match(content, /# Review/);
+});
+
 test("pull reports a conflict for differing local content instead of overwriting", async () => {
   const root = await fixture("agentplaybooks-pull-conflict-");
   await put(root, ".agents/skills/release/SKILL.md", "local variant\n");

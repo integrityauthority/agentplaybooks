@@ -17,6 +17,7 @@ import {
 } from "@/lib/mcp/federation";
 import { decryptMcpSecrets } from "@/lib/mcp/secrets";
 import { composePlaybookSystemPrompt } from "@/lib/playbook-prompt";
+import { validateAgentSkillDescription, validateAgentSkillName } from "@/lib/agent-skills";
 
 type PersonaSource = Pick<Playbook, "id" | "persona_name" | "persona_system_prompt" | "persona_metadata" | "instructions">;
 
@@ -1730,6 +1731,11 @@ use_secret({
             const content = args.content as string;
             const priority = (args.priority as number) || 50;
 
+            const nameError = validateAgentSkillName(name);
+            if (nameError) throw new Error(nameError);
+            const descriptionError = validateAgentSkillDescription(description);
+            if (descriptionError) throw new Error(descriptionError);
+
             const { data, error } = await serviceSupabase
               .from("skills")
               .insert({
@@ -1764,6 +1770,14 @@ use_secret({
 
             if (Object.keys(updates).length === 0) {
               throw new Error("No fields to update");
+            }
+            if (args.name !== undefined) {
+              const nameError = validateAgentSkillName(args.name);
+              if (nameError) throw new Error(nameError);
+            }
+            if (args.description !== undefined) {
+              const descriptionError = validateAgentSkillDescription(args.description);
+              if (descriptionError) throw new Error(descriptionError);
             }
 
             let query = serviceSupabase

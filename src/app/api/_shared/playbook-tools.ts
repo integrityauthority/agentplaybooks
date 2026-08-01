@@ -275,8 +275,8 @@ export const PLAYBOOK_TOOLS: McpTool[] = [
     inputSchema: {
       type: "object",
       properties: {
-        name: { type: "string", description: "Name of the skill (e.g. data_analyzer)" },
-        description: { type: "string", description: "Brief description of what the skill does" },
+        name: { type: "string", description: "Agent Skills-compatible name (lowercase kebab-case, e.g. data-analyzer)" },
+        description: { type: "string", description: "What the skill does and when the agent should use it" },
         content: { type: "string", description: "The instructions/prompt/code for the skill" },
         priority: { type: "number", description: "Priority level (default 50)" },
       },
