@@ -154,6 +154,9 @@ export function analyze(inventory) {
         platform: config.platform,
         transport: server.transport,
         digest: serverDigest,
+        // Kept for platform adapters so sync can copy definitions between
+        // local configuration files. Never serialized into the manifest.
+        definition: server.definition,
       });
       if (server.transport === "unknown") {
         findings.push(finding("high", "mcp.transport.missing", `MCP server '${server.name}' has neither a command nor a URL.`, config.source));

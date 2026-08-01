@@ -55,9 +55,12 @@ Sync is deliberately not blind two-way copying.
 5. **Apply** only with an explicit `--apply`.
 6. **Verify** generated files and record hashes for the next three-way diff.
 
-The initial CLI implements local manifest planning and atomic manifest writes.
-Platform file generation, remote push/pull, and three-way conflict resolution
-will be added behind this same lifecycle.
+The CLI implements local manifest planning with atomic writes, platform file
+generation for the `claude` and `cursor` targets (skills and MCP server
+definitions; conflicting definitions are reported and skipped), and
+authenticated remote `pull`/`push` against the management API using user API
+keys. Three-way conflict resolution with recorded sync-state hashes will be
+added behind this same lifecycle.
 
 Safety rules:
 
@@ -113,10 +116,12 @@ robots, terminals, and spoken links can use the short domain.
 
 ## Delivery sequence
 
-1. Local doctor, JSON output, strict CI mode.
-2. Local manifest plan/apply with backups.
-3. Platform adapters and three-way sync state.
-4. Authenticated remote push/pull and team collaboration.
-5. GitHub Action, health badge, and opt-in aggregate health index.
-6. ROS 2 inventory/validation adapter.
-7. Enterprise policies, approvals, signing, audit, and gateway deployment.
+1. Local doctor, JSON output, strict CI mode. (done)
+2. Local manifest plan/apply with backups. (done)
+3. Platform adapters (claude, cursor: done) and three-way sync state.
+4. Authenticated remote push/pull (done) and team collaboration.
+5. Claude Code plugin: skill + commands shipped inside `packages/cli`,
+   marketplace manifest at the repository root. (done)
+6. GitHub Action, health badge, and opt-in aggregate health index.
+7. ROS 2 inventory/validation adapter.
+8. Enterprise policies, approvals, signing, audit, and gateway deployment.

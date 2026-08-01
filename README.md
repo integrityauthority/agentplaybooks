@@ -82,6 +82,25 @@ npm run preview
 npx wrangler deploy
 ```
 
+## CLI and Claude Code Plugin (`packages/cli`)
+
+`agentplaybooks doctor <project>` audits local agent configuration
+(instructions, Agent Skills, MCP servers, likely hard-coded secrets, drift)
+and `agentplaybooks sync <project>` creates the canonical
+`agentplaybook.json` plus the platform files missing from enabled targets
+(`.claude/skills` + `.mcp.json`, `.cursor/skills` + `.cursor/mcp.json`).
+`login` / `playbooks` / `pull` / `push` synchronize skills and the manifest
+with a hosted playbook using a user API key. All mutating commands are
+plan-only until `--apply`. See [packages/cli/README.md](packages/cli/README.md).
+
+The same package doubles as a Claude Code / Claude Cowork plugin (skill +
+slash commands). Install it from this repository:
+
+```text
+/plugin marketplace add integrityauthority/agentplaybooks
+/plugin install agentplaybooks@agentplaybooks
+```
+
 ## API Overview
 
 ### Public and Unlisted playbook access
@@ -307,6 +326,8 @@ agentplaybooks/
       supabase/            # Supabase client and types
       attachment-validator.ts
       utils.ts
+  packages/
+    cli/                   # AgentPlaybooks CLI + Claude Code plugin
   scripts/                 # Seed and build scripts
   supabase/
     migrations/            # Database migrations

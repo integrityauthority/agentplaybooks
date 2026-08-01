@@ -1,5 +1,6 @@
 import { mkdir, readFile, rename, writeFile, copyFile } from "node:fs/promises";
 import path from "node:path";
+import { applyAdapters, planAdapters } from "./adapters.js";
 import { runDoctor } from "./doctor.js";
 import { comparableManifest, createManifest } from "./manifest.js";
 
@@ -33,14 +34,18 @@ export async function planSync(target) {
   const manifest = existing?.apiVersion === discovered.apiVersion && existing?.kind === discovered.kind
     ? mergeExisting(discovered, existing)
     : discovered;
-  const changed = !existing || JSON.stringify(comparableManifest(existing)) !== JSON.stringify(comparableManifest(manifest));
+  const manifestChanged = !existing || JSON.stringify(comparableManifest(existing)) !== JSON.stringify(comparableManifest(manifest));
+  const adapters = planAdapters(report, manifest.spec.targets);
   return {
     report,
     manifest,
     manifestPath,
     existing,
-    changed,
-    action: existing ? (changed ? "update" : "none") : "create",
+    manifestChanged,
+    changed: manifestChanged || adapters.actions.length > 0,
+    action: existing ? (manifestChanged ? "update" : "none") : "create",
+    fileActions: adapters.actions,
+    conflicts: adapters.conflicts,
   };
 }
 
@@ -67,28 +72,47 @@ function mergeExisting(discovered, existing) {
 }
 
 export async function applySync(plan) {
-  if (!plan.changed) return { applied: false, backupPath: null };
+  if (!plan.changed) return { applied: false, backupPath: null, written: [], backups: [] };
+
+  const backupDirectory = path.join(path.dirname(plan.manifestPath), ".agentplaybooks", "backups", timestampForPath());
 
   let backupPath = null;
-  if (plan.existing) {
-    const backupDirectory = path.join(path.dirname(plan.manifestPath), ".agentplaybooks", "backups", timestampForPath());
+  if (plan.manifestChanged && plan.existing) {
     await mkdir(backupDirectory, { recursive: true, mode: 0o700 });
     backupPath = path.join(backupDirectory, MANIFEST_NAME);
     await copyFile(plan.manifestPath, backupPath);
   }
-  await atomicWrite(plan.manifestPath, plan.manifest);
-  return { applied: true, backupPath };
+  if (plan.manifestChanged) {
+    await atomicWrite(plan.manifestPath, plan.manifest);
+  }
+  const { written, backups } = await applyAdapters(path.dirname(plan.manifestPath), plan.fileActions, backupDirectory);
+  return { applied: true, backupPath, written, backups };
 }
 
 export function printSyncPlan(plan) {
-  if (plan.action === "none") {
-    console.log(`${MANIFEST_NAME} is already in sync.`);
+  if (!plan.changed && plan.conflicts.length === 0) {
+    console.log(`${MANIFEST_NAME} and platform files are already in sync.`);
     return;
   }
-  console.log(`Sync plan: ${plan.action} ${plan.manifestPath}`);
-  console.log(`  ${plan.manifest.spec.instructions.length} instruction file(s)`);
-  console.log(`  ${plan.manifest.spec.skills.length} skill(s)`);
-  console.log(`  ${plan.manifest.spec.connections.mcp.length} MCP server definition(s)`);
-  console.log(`  ${plan.manifest.spec.targets.length} detected deployment target(s)`);
-  console.log("No files have been changed. Run again with --apply to write the manifest.");
+  if (plan.manifestChanged) {
+    console.log(`Sync plan: ${plan.action} ${plan.manifestPath}`);
+    console.log(`  ${plan.manifest.spec.instructions.length} instruction file(s)`);
+    console.log(`  ${plan.manifest.spec.skills.length} skill(s)`);
+    console.log(`  ${plan.manifest.spec.connections.mcp.length} MCP server definition(s)`);
+    console.log(`  ${plan.manifest.spec.targets.length} detected deployment target(s)`);
+  }
+  for (const action of plan.fileActions) {
+    if (action.kind === "skill") {
+      console.log(`  [${action.target}] ${action.action} ${action.path} (from ${action.from})`);
+    } else {
+      console.log(`  [${action.target}] ${action.action} ${action.path} (+ ${action.servers.join(", ")})`);
+    }
+  }
+  for (const item of plan.conflicts) {
+    console.log(`  [conflict:${item.target}] ${item.kind} '${item.name}': ${item.reason}`);
+    for (const source of item.sources) console.log(`    - ${source}`);
+  }
+  if (plan.changed) {
+    console.log("No files have been changed. Run again with --apply to write these changes.");
+  }
 }
