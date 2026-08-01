@@ -28,8 +28,9 @@ platformmappákban, és jelenti:
 ## Sync: egy playbook, minden ügynök
 
 ```bash
-apb sync .              # csak terv — megmutatja, mi íródna
-apb sync . --apply      # manifest és hiányzó platformfájlok megírása
+apb sync .                       # csak terv — megmutatja, mi íródna
+apb sync . --apply               # manifest és hiányzó platformfájlok megírása
+apb sync . --target=codex        # a projektben még nem használt target bekapcsolása
 ```
 
 A sync a talált konfigurációt a kanonikus `agentplaybook.json` manifestbe
@@ -74,27 +75,60 @@ apb pull <guid> --apply # skillek letöltése a .agents/skills/ tárba
 apb push --apply        # lokális skillek + manifest feltöltése
 ```
 
-A round-trip mindkét irányban működik:
+A skillek, az MCP-szerverek és a manifest mindkét irányban utaznak:
 
 - **Lokális → hosztolt** (`push`): a bármelyik platformmappában megtalált
-  skillek és a kanonikus manifest felkerülnek a linkelt (vagy egy új)
-  playbookba. A lokálisan már nem létező távoli skilleket nem bántja,
-  secret-értéket sosem tölt fel, és megtagadja az olyan tartalom feltöltését,
-  ami beégetett hitelesítőadatnak tűnik.
+  skillek és MCP-szerver definíciók, valamint a kanonikus manifest felkerülnek
+  a linkelt (vagy egy új) playbookba. Magára a kapcsolatra (command, args, env,
+  url, headers) a lokális fájlok az irányadóak; a csak a hosztolt oldalon létező
+  federációs beállítások — timeoutok, auth, hozzáférés, kurált eszközlisták,
+  leírások — megmaradnak, nem íródnak felül. A lokálisan már nem létező távoli
+  bejegyzéseket nem bántja.
 - **Hosztolt → lokális** (`pull` + `sync --apply`): a távoli skillek a
-  hordozható `.agents/skills/` tárba kerülnek, a projekt pedig a
-  `.agentplaybooks/remote.json`-nal linkelődik; az ezt követő sync minden
-  engedélyezett platform-targetre szétteríti őket — bármelyik szerkesztőt is
+  `.agents/skills/`, a távoli MCP-szerverek pedig a `.agents/mcp.json` fájlba
+  kerülnek — vagyis a hordozható tárba —, a projekt pedig a
+  `.agentplaybooks/remote.json`-nal linkelődik. Az ezt követő sync mindkettőt
+  szétteríti minden engedélyezett platform-targetre — bármelyik szerkesztőt is
   használja a csapattársad.
 
-Self-hosted telepítéshez használd a `--url=<base>` kapcsolót vagy az
+Egy friss gépen a hordozható tár az egyetlen dolog, ami a lemezen van, és az
+nem deployment target — így önmagában semmi nem íródna ki. Kapcsold be azokat
+az eszközöket, amiket használsz:
+
+```bash
+apb pull <guid> --apply
+apb sync --target=claude,codex --apply
+```
+
+Ha egyetlen target sincs engedélyezve, a `sync` ki is listázza, milyen
+ügynök-eszközöket talált a felhasználódnál, hogy tudd, mit adj át.
+
+Az OpenAPI-federációs szerverek csak a hosztolt oldalon léteznek, lokális
+kliensmegfelelőjük nincs; a `pull` ezeket jelenti, nem félig lefordított
+konfigot ír a helyükre. Secret-értékek egyik irányban sem mozdulnak — lásd
+lentebb. Self-hosted telepítéshez használd a `--url=<base>` kapcsolót vagy az
 `AGENTPLAYBOOKS_URL` változót.
 
-Hatókör ebben a kiadásban: a távoli `push`/`pull` a skilleket és a manifestet
-fedi le. Az MCP-szerver definíciók a lokális platformfájlok között
-szinkronizálódnak (`.mcp.json`, `.cursor/mcp.json`, `.codex/config.toml`), de
-a hosztolt playbook MCP-szerver listájába még nem íródnak be, és onnan még
-nem is olvasódnak.
+## Secretek: a playbook a szerződést hordozza, nem a hitelesítőadatot
+
+A playbook kimondja, milyen hitelesítőadatokra van szüksége; az értékek ott
+maradnak, ahol lenniük kell. A `sync` az MCP-konfigurációban talált minden
+környezeti hivatkozást (`${VAR}`, `$VAR`, `env:VAR`) összegyűjt a
+`spec.secrets` alá:
+
+```json
+"secrets": [
+  { "name": "DEPLOY_API_KEY", "ref": "env:DEPLOY_API_KEY", "required": true }
+]
+```
+
+Ezzel a playbook hordozható és önleíró lesz: aki lehúzza, pontosan tudja,
+mely változókat kell beállítania — anélkül, hogy bárki bárhová elküldött volna
+egy kulcsot. Ha módosítasz egy bejegyzést — például egy vaultra mutatsz vele,
+vagy opcionálisra állítod —, a te verziód megmarad a következő sync után is.
+Literál hitelesítőadatok sosem íródnak a manifestbe és sosem kerülnek fel: a
+`doctor` megjelöli őket, a `push` pedig megtagadja a futást, amíg nem cserélted
+le őket hivatkozásra.
 
 ## Claude Code és Claude Cowork plugin
 

@@ -59,15 +59,46 @@ Die Sync-Engine behält die Garantien unseres ursprünglichen Designs:
 ## Team-Playbooks: pull und push
 
 ```bash
-apb login                 # User-API-Key (apb_...) speichern
-apb push --apply          # Skills + Manifest in ein gehostetes Playbook laden
-apb pull <guid> --apply   # Teammitglieder ziehen es in ihre Projekte
+apb login                              # User-API-Key (apb_...) speichern
+apb push --apply                       # Skills + MCP-Server + Manifest → gehostetes Playbook
+apb pull <guid> --apply                # Teammitglieder ziehen es in ihre Projekte
+apb sync --target=claude,codex --apply # …und weiter in die Tools, die sie nutzen
 ```
 
-`pull` legt Skills im portablen `.agents/skills/`-Speicher ab; ein
-anschließendes `sync --apply` verteilt sie auf jede Plattform, die Ihr
-Teammitglied nutzt — auch wenn das ein anderer Editor ist als Ihrer. Genau
-darum geht es: **die portable Einheit ist das Playbook, nicht das Tool**.
+Skills *und* MCP-Server-Definitionen reisen in beide Richtungen. `pull` legt
+sie im portablen Speicher ab (`.agents/skills/`, `.agents/mcp.json`); das
+anschließende `sync` verteilt sie auf jede Plattform, die Ihr Teammitglied
+nutzt — auch wenn das ein anderer Editor ist als Ihrer. Genau darum geht es:
+**die portable Einheit ist das Playbook, nicht das Tool**.
+
+Zwei Details, nach denen sofort gefragt wurde. Erstens kennt die gehostete
+Seite Dinge, die eine lokale Datei nicht ausdrücken kann: Request-Timeouts,
+Auth-Konfiguration, kuratierte Tool-Listen. Ein `push` aktualisiert die
+Verbindung und lässt all das unberührt — der reichere Datensatz wird nie auf
+den ärmeren eingeebnet. Zweitens ist auf einer brandneuen Maschine der
+portable Speicher das Einzige auf der Platte und selbst kein Deployment-Ziel;
+deshalb nennt Ihnen `sync`, welche Agent-Tools es für Ihren Benutzer gefunden
+hat und was Sie an `--target` übergeben sollten. Keine stillen No-Ops.
+
+## Secrets: Der Vertrag reist, die Zugangsdaten nicht
+
+Das ist der Teil, bei dem alle vage Formulierungen erwarten, deshalb ganz
+deutlich: **kein Geheimniswert bewegt sich jemals.** Was sich bewegt, ist die
+Anforderung. `sync` sammelt jede Umgebungsreferenz aus Ihrer
+MCP-Konfiguration im Manifest:
+
+```json
+"secrets": [
+  { "name": "DEPLOY_API_KEY", "ref": "env:DEPLOY_API_KEY", "required": true }
+]
+```
+
+Wer das Playbook zieht, weiß nun genau, welche Variablen zu setzen sind — und
+niemand hat irgendwo einen Schlüssel verschickt. Richten Sie einen Eintrag
+stattdessen auf einen Vault, überlebt Ihre Änderung den nächsten Sync.
+Literale Zugangsdaten werden von `doctor` gemeldet, und `push` verweigert die
+Ausführung, bis sie durch Referenzen ersetzt sind — auch dann, wenn sie in
+einem MCP-Header oder einer URL stecken.
 
 ## Als Claude-Code-Plugin installieren
 

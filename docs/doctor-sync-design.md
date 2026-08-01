@@ -59,9 +59,28 @@ The CLI implements local manifest planning with atomic writes, platform file
 generation for the `claude`, `cursor`, `codex` (ChatGPT), `antigravity`, and
 `hermes` targets (skills and MCP server definitions where the platform has a
 project-scoped location; conflicting definitions are reported and skipped),
-and authenticated remote `pull`/`push` against the management API using user
-API keys. Three-way conflict resolution with recorded sync-state hashes will
-be added behind this same lifecycle.
+and authenticated remote `pull`/`push` of skills, MCP servers, and the manifest
+against the management API using user API keys. Three-way conflict resolution
+with recorded sync-state hashes will be added behind this same lifecycle.
+
+Two asymmetries are deliberate rather than temporary:
+
+- **The hosted record is richer than any local file.** A hosted MCP server can
+  carry federation settings (timeouts, auth, access, curated tool lists) that no
+  client config expresses. Local files are authoritative for the connection keys
+  only (`command`, `args`, `env`, `url`, `headers`); everything else survives a
+  push untouched. OpenAPI federation servers have no local equivalent at all and
+  are reported on pull rather than half-translated.
+- **The portable store is not a deployment target.** `pull` writes to
+  `.agents/skills/` and `.agents/mcp.json`; a target has to be enabled before
+  anything reaches a tool's own folder. On a machine where the project has no
+  target yet, `sync` reports the agent tools detected for the user and
+  `--target=<types>` enables them explicitly. Detection never enables anything
+  on its own.
+
+Deletion is not mirrored in either direction yet: remote entries missing
+locally are left alone. A `--prune` mode belongs behind the same plan/apply
+gate as everything else.
 
 Safety rules:
 
@@ -69,7 +88,10 @@ Safety rules:
 - Non-interactive mutation requires `agentplaybooks sync --apply`.
 - Existing files are backed up before replacement.
 - Secret values never enter the manifest; only environment, vault, or platform
-  references are allowed.
+  references are allowed. `spec.secrets` is populated from the environment
+  references discovered in local configuration, so a playbook declares what it
+  needs to run without carrying a single credential. Hand-edited entries (a
+  vault ref, `required: false`) win over discovery on later syncs.
 - Conflicts never silently use last-write-wins.
 - A robot configuration deployment does not authorize physical actuation.
 - Physical actions default to deny and require a separate runtime policy,

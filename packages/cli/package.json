@@ -1,6 +1,6 @@
 {
   "name": "@agentplaybooks/cli",
-  "version": "0.1.0-alpha.1",
+  "version": "0.2.0-alpha.1",
   "description": "Audit and synchronize portable AI agent playbooks across Claude Code, Cursor, Codex, Antigravity, and Hermes Agent",
   "type": "module",
   "license": "PolyForm-Noncommercial-1.0.0",

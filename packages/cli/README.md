@@ -10,6 +10,7 @@ node ./bin/agentplaybooks.js doctor ../my-project --strict
 
 node ./bin/agentplaybooks.js sync ../my-project
 node ./bin/agentplaybooks.js sync ../my-project --apply
+node ./bin/agentplaybooks.js sync ../my-project --target=claude,codex --apply
 ```
 
 `doctor` does not write files or use the network. It reports instruction
@@ -30,8 +31,10 @@ insecure MCP URLs, cross-platform drift, and a 0-100 health score.
    | `hermes` (Nous Hermes Agent) | `~/.hermes/skills/<name>/SKILL.md` | — (global `config.yaml`) |
 
    Targets come from `spec.targets` in the manifest; detected platforms are
-   enabled automatically, `antigravity` and `hermes` are opt-in (add
-   `{"id": "hermes", "type": "hermes", "enabled": true, "config": {}}`).
+   enabled automatically, and `--target=<types>` enables one the project does
+   not have yet (which is what a freshly pulled playbook needs). When no target
+   is enabled, `sync` lists the agent tools it detects for the current user
+   instead of quietly doing nothing.
    Antigravity reads project skills from the portable `.agents/skills/` store;
    Hermes has no project-scoped store, so its adapter writes to the home
    directory and also picks instructions up from `AGENTS.md` natively.
@@ -46,24 +49,38 @@ export AGENTPLAYBOOKS_API_KEY=<your-user-api-key>   # or paste on the login prom
 node ./bin/agentplaybooks.js login                  # verify + store the key
 node ./bin/agentplaybooks.js playbooks              # list accessible playbooks
 
-node ./bin/agentplaybooks.js pull <id|guid> --apply # skills -> .agents/skills/
-node ./bin/agentplaybooks.js push --apply           # local skills + manifest -> remote
+node ./bin/agentplaybooks.js pull <id|guid> --apply  # remote -> .agents/ store
+node ./bin/agentplaybooks.js push --apply           # local -> remote playbook
 ```
 
 - Keys are user API keys (`apb_...`) created in the dashboard, stored with
   `0600` permissions in `~/.agentplaybooks/credentials.json`.
-- `pull` writes remote skills into the portable `.agents/skills/` store and
-  links the project via `.agentplaybooks/remote.json`; a subsequent
-  `sync --apply` propagates them to the enabled platform targets.
-- `push` uploads skills and the manifest to the linked playbook (or creates
-  one). It never uploads secret values and refuses to push content that looks
-  like it contains hard-coded credentials. Remote skills that no longer exist
-  locally are left untouched.
+- Skills, MCP server definitions, and the manifest travel in both directions.
+- `pull` writes remote skills to `.agents/skills/` and remote MCP servers to
+  `.agents/mcp.json`, then links the project via `.agentplaybooks/remote.json`;
+  a subsequent `sync --apply` propagates both to the enabled platform targets.
+  OpenAPI federation servers are hosted-only and are reported, not translated.
+- `push` uploads skills, MCP servers, and the manifest to the linked playbook
+  (or creates one). Local files are authoritative for the connection keys
+  (`command`, `args`, `env`, `url`, `headers`); hosted-only federation settings
+  (`timeout_ms`, `auth`, `access`), curated tool lists, and descriptions are
+  preserved. Remote entries that no longer exist locally are left untouched.
 - `pull` and `push` are plan-only unless `--apply` is supplied. Use
   `--url=<base>` or `AGENTPLAYBOOKS_URL` for self-hosted deployments.
-- Remote sync covers skills and the manifest. MCP server definitions
-  synchronize between local platform files, but are not yet written to or read
-  from the hosted playbook's MCP server list.
+
+## Secrets
+
+Secret values never enter the manifest and are never uploaded. Instead, `sync`
+collects the environment references it finds in MCP configuration (`${VAR}`,
+`$VAR`, `env:VAR`) into `spec.secrets`, so a playbook states what it needs:
+
+```json
+{ "name": "DEPLOY_API_KEY", "ref": "env:DEPLOY_API_KEY", "required": true }
+```
+
+Entries you edit by hand — a vault reference, `required: false` — survive later
+syncs. `doctor` flags literal credentials by line number without printing them,
+and `push` refuses to run until they are replaced by references.
 
 Line endings are normalized (CRLF is treated as LF) everywhere digests and
 content comparisons happen, so a Windows checkout and a macOS checkout of the

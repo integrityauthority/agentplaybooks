@@ -61,15 +61,47 @@ original:
 ## Playbooks de equipo: pull y push
 
 ```bash
-apb login                 # guarda tu user API key (apb_...)
-apb push --apply          # sube skills + manifiesto a un playbook alojado
-apb pull <guid> --apply   # tus compañeros lo descargan en sus proyectos
+apb login                              # guarda tu user API key (apb_...)
+apb push --apply                       # skills + servidores MCP + manifiesto → playbook alojado
+apb pull <guid> --apply                # tus compañeros lo descargan en sus proyectos
+apb sync --target=claude,codex --apply # …y lo llevan a las herramientas que usen
 ```
 
-`pull` deposita los skills en el almacén portátil `.agents/skills/`; un
-`sync --apply` posterior los reparte a cada plataforma que use tu compañero —
-aunque sea un editor distinto al tuyo. Esa es la idea: **la unidad portátil
-es el playbook, no la herramienta**.
+Los skills *y* las definiciones de servidores MCP viajan en ambas direcciones.
+`pull` los deposita en el almacén portátil (`.agents/skills/`,
+`.agents/mcp.json`); un `sync` posterior los reparte a cada plataforma que use
+tu compañero — aunque sea un editor distinto al tuyo. Esa es la idea: **la
+unidad portátil es el playbook, no la herramienta**.
+
+Dos detalles que nos preguntaron de inmediato. El primero: el lado alojado sabe
+cosas que un archivo local no puede expresar — timeouts de petición,
+configuración de autenticación, listas curadas de herramientas. Un `push`
+actualiza la conexión y deja todo eso en paz; nunca aplasta el registro más
+rico con el más pobre. Y las entradas remotas que no existen en local quedan
+intactas. El segundo: en una máquina recién estrenada el almacén portátil es lo
+único que hay en disco y no es un destino de despliegue, así que `sync` te dice
+qué herramientas de agente ha encontrado para tu usuario y qué pasarle a
+`--target`. Nada de no-ops silenciosos.
+
+## Secretos: viaja el contrato, no la credencial
+
+Es la parte que la gente espera que sea vaga, así que seamos explícitos:
+**ningún valor secreto se mueve nunca**. Lo que se mueve es el requisito.
+`sync` recopila en el manifiesto todas las referencias de entorno de tu
+configuración MCP:
+
+```json
+"secrets": [
+  { "name": "DEPLOY_API_KEY", "ref": "env:DEPLOY_API_KEY", "required": true }
+]
+```
+
+Quien descargue el playbook sabe ya exactamente qué variables definir, y nadie
+ha enviado una clave por ningún sitio. Si en su lugar apuntas una entrada a un
+vault, tu edición sobrevive al siguiente sync. Las credenciales literales las
+señala `doctor`, y `push` se niega a ejecutarse hasta que se reemplacen por
+referencias — incluidas las credenciales que estén en una cabecera o en la URL
+de un MCP.
 
 ## Instálalo como plugin de Claude Code
 

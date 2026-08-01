@@ -1,4 +1,4 @@
-import { mkdir, copyFile, readFile, rename, writeFile } from "node:fs/promises";
+import { access, mkdir, copyFile, readFile, rename, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { normalizePath, normalizeText } from "./discovery.js";
@@ -21,6 +21,18 @@ const TARGET_ADAPTERS = {
 };
 
 const SAFE_SKILL_NAME = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
+
+// Target types `sync` can write files for, and the home-directory marker that
+// indicates the user has that tool installed at all. The marker is only used to
+// suggest targets; nothing is ever enabled or written without the user asking.
+export const ADAPTER_TARGET_TYPES = Object.keys(TARGET_ADAPTERS);
+export const TARGET_HOME_MARKERS = {
+  claude: ".claude",
+  cursor: ".cursor",
+  codex: ".codex",
+  antigravity: ".gemini",
+  hermes: ".hermes",
+};
 
 function canonicalize(value) {
   if (Array.isArray(value)) return value.map(canonicalize);
@@ -216,6 +228,24 @@ function mcpActions(report, targetIds, conflicts, { root, homedir }) {
     });
   }
   return actions;
+}
+
+/**
+ * Which agent tools this user appears to have installed. Used to suggest
+ * targets when a project has none — for example right after `pull` on a new
+ * machine, where the portable store is the only thing on disk.
+ */
+export async function detectInstalledTargets(homedir = os.homedir()) {
+  const detected = [];
+  for (const [type, marker] of Object.entries(TARGET_HOME_MARKERS)) {
+    try {
+      await access(path.join(homedir, marker));
+      detected.push(type);
+    } catch {
+      continue;
+    }
+  }
+  return detected;
 }
 
 /**

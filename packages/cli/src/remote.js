@@ -132,10 +132,81 @@ async function readLocalFile(root, relativePath) {
   }
 }
 
+// --- MCP server mapping -----------------------------------------------------
+//
+// A hosted playbook stores an MCP server as `transport_type` plus a
+// `transport_config` that can also carry platform-only federation settings
+// (timeout_ms, access, auth, allow_insecure_http, openapi). A local client
+// config only expresses the connection itself. These are the keys that travel
+// in both directions; everything else on the remote is the platform's business
+// and must survive a push untouched.
+const LOCAL_TRANSPORT_KEYS = ["command", "args", "env", "url", "headers"];
+const PORTABLE_MCP_PATH = ".agents/mcp.json";
+
+function localMcpDefinition(server) {
+  const config = server.transport_config ?? {};
+  if (server.transport_type === "stdio") {
+    if (typeof config.command !== "string") return null;
+    return {
+      command: config.command,
+      ...(Array.isArray(config.args) ? { args: config.args } : {}),
+      ...(config.env && typeof config.env === "object" ? { env: config.env } : {}),
+    };
+  }
+  if (server.transport_type === "http" || server.transport_type === "sse") {
+    if (typeof config.url !== "string") return null;
+    return {
+      url: config.url,
+      ...(config.headers && typeof config.headers === "object" ? { headers: config.headers } : {}),
+    };
+  }
+  // `openapi` servers are a hosted federation feature with no local client
+  // equivalent, so they are reported rather than half-translated.
+  return null;
+}
+
+function remoteTransportFor(definition) {
+  if (typeof definition?.command === "string") {
+    return {
+      transport_type: "stdio",
+      transport_config: {
+        command: definition.command,
+        ...(definition.args !== undefined ? { args: definition.args } : {}),
+        ...(definition.env !== undefined ? { env: definition.env } : {}),
+      },
+    };
+  }
+  if (typeof definition?.url === "string") {
+    return {
+      transport_type: definition.url.includes("/sse") ? "sse" : "http",
+      transport_config: {
+        url: definition.url,
+        ...(definition.headers !== undefined ? { headers: definition.headers } : {}),
+      },
+    };
+  }
+  return null;
+}
+
+function mcpDocument(existingContent, additions) {
+  let document = { mcpServers: {} };
+  if (existingContent !== null) {
+    document = JSON.parse(existingContent);
+    if (!document.mcpServers || typeof document.mcpServers !== "object" || Array.isArray(document.mcpServers)) {
+      document.mcpServers = {};
+    }
+  }
+  for (const [name, definition] of Object.entries(additions)) {
+    document.mcpServers[name] = definition;
+  }
+  return `${JSON.stringify(document, null, 2)}\n`;
+}
+
 /**
- * Plan pulling a remote playbook's skills into the portable local store
- * (.agents/skills). Existing files with different content become conflicts;
- * nothing is overwritten.
+ * Plan pulling a remote playbook's skills and MCP servers into the portable
+ * local store (.agents/). Existing entries with different content become
+ * conflicts; nothing is overwritten. A follow-up `sync --apply` fans the
+ * portable store out to each enabled platform target.
  */
 export async function planPull(root, ref, { url, apiKey, fetchImpl } = {}) {
   const playbook = await resolvePlaybook(url, apiKey, ref, { fetchImpl });
@@ -155,6 +226,55 @@ export async function planPull(root, ref, { url, apiKey, fetchImpl } = {}) {
     } else if (existing !== content) {
       conflicts.push({ kind: "skill", name: skill.name, reason: `Local ${relativePath} differs from the remote skill.` });
     }
+  }
+
+  const portableContent = await readLocalFile(root, PORTABLE_MCP_PATH);
+  let portableServers = {};
+  let portableReadable = true;
+  if (portableContent !== null) {
+    try {
+      const parsed = JSON.parse(portableContent);
+      portableServers = parsed?.mcpServers && typeof parsed.mcpServers === "object" && !Array.isArray(parsed.mcpServers)
+        ? parsed.mcpServers
+        : {};
+    } catch {
+      portableReadable = false;
+      conflicts.push({ kind: "mcp", name: PORTABLE_MCP_PATH, reason: `Local ${PORTABLE_MCP_PATH} is not valid JSON.` });
+    }
+  }
+
+  const mcpAdditions = {};
+  for (const server of playbook.mcp_servers ?? []) {
+    if (typeof server.name !== "string" || server.name.length === 0) continue;
+    const definition = localMcpDefinition(server);
+    if (definition === null) {
+      conflicts.push({
+        kind: "mcp",
+        name: String(server.name),
+        reason: server.transport_type === "openapi"
+          ? "Remote server is an OpenAPI federation server, which has no local client equivalent."
+          : "Remote server has no usable command or URL in its transport configuration.",
+      });
+      continue;
+    }
+    if (!portableReadable) continue;
+    const existing = portableServers[server.name];
+    if (existing === undefined) {
+      mcpAdditions[server.name] = definition;
+    } else if (canonicalJson(existing) !== canonicalJson(definition)) {
+      conflicts.push({ kind: "mcp", name: server.name, reason: `Local ${PORTABLE_MCP_PATH} defines '${server.name}' differently.` });
+    }
+  }
+
+  if (Object.keys(mcpAdditions).length > 0) {
+    actions.push({
+      kind: "mcp-config",
+      name: PORTABLE_MCP_PATH,
+      action: portableContent === null ? "create" : "merge",
+      path: PORTABLE_MCP_PATH,
+      servers: Object.keys(mcpAdditions).sort(),
+      content: mcpDocument(portableContent, mcpAdditions),
+    });
   }
 
   return {
@@ -203,6 +323,49 @@ function localSkillsForPush(report, conflicts) {
   return skills;
 }
 
+function localMcpServersForPush(report, conflicts) {
+  const groups = new Map();
+  for (const server of report.inventory.mcpServers) {
+    const group = groups.get(server.name) ?? [];
+    group.push(server);
+    groups.set(server.name, group);
+  }
+  const servers = [];
+  for (const [name, variants] of groups) {
+    if (new Set(variants.map((item) => canonicalJson(item.definition))).size > 1) {
+      conflicts.push({ kind: "mcp", name, reason: "MCP server definitions differ across platforms; resolve the drift before pushing." });
+      continue;
+    }
+    const transport = remoteTransportFor(variants[0].definition);
+    if (transport === null) {
+      conflicts.push({ kind: "mcp", name, reason: "MCP server has neither a command nor a URL; skipped." });
+      continue;
+    }
+    servers.push({ name, ...transport, sources: variants.map((item) => item.source) });
+  }
+  return servers;
+}
+
+/**
+ * The remote may hold federation settings a local config cannot express
+ * (timeouts, auth, access). Local files are authoritative for the connection
+ * keys only; anything else on the remote is preserved.
+ */
+function mergedTransportConfig(remoteConfig, localConfig) {
+  const preserved = Object.fromEntries(
+    Object.entries(remoteConfig ?? {}).filter(([key]) => !LOCAL_TRANSPORT_KEYS.includes(key)),
+  );
+  return { ...preserved, ...localConfig };
+}
+
+function remoteMatchesLocal(remoteServer, localServer) {
+  if (remoteServer.transport_type !== localServer.transport_type) return false;
+  const projection = Object.fromEntries(
+    Object.entries(remoteServer.transport_config ?? {}).filter(([key]) => LOCAL_TRANSPORT_KEYS.includes(key)),
+  );
+  return canonicalJson(projection) === canonicalJson(localServer.transport_config);
+}
+
 /**
  * Plan pushing the local playbook to the remote. Refuses to plan when doctor
  * finds likely hard-coded credentials in the content that would be uploaded.
@@ -211,9 +374,14 @@ export async function planPush(root, { url, apiKey, fetchImpl } = {}) {
   const report = await runDoctor(root);
   const conflicts = [];
   const skills = localSkillsForPush(report, conflicts);
+  const mcpServers = localMcpServersForPush(report, conflicts);
 
+  const uploadedSources = new Set([
+    ...skills.map((skill) => skill.source),
+    ...mcpServers.flatMap((server) => server.sources),
+  ]);
   const leaking = report.findings.filter((item) => item.code === "secret.hardcoded"
-    && skills.some((skill) => skill.source === item.source));
+    && uploadedSources.has(item.source));
   if (leaking.length > 0) {
     const sources = [...new Set(leaking.map((item) => item.source))].join(", ");
     throw new Error(`Refusing to push: possible hard-coded credentials in ${sources}. Move secrets to environment references first.`);
@@ -232,6 +400,9 @@ export async function planPush(root, { url, apiKey, fetchImpl } = {}) {
     for (const skill of skills) {
       actions.push({ kind: "skill", action: "create", name: skill.name });
     }
+    for (const server of mcpServers) {
+      actions.push({ kind: "mcp", action: "create", name: server.name });
+    }
   } else {
     if (canonicalJson(remote.config?.agentplaybook ?? null) !== canonicalJson(manifest)) {
       actions.push({ kind: "playbook", action: "update-config", name: remote.name });
@@ -245,12 +416,28 @@ export async function planPush(root, { url, apiKey, fetchImpl } = {}) {
         actions.push({ kind: "skill", action: "update", name: skill.name, skillId: existing.id });
       }
     }
+    const remoteMcp = new Map((remote.mcp_servers ?? []).map((server) => [server.name, server]));
+    for (const server of mcpServers) {
+      const existing = remoteMcp.get(server.name);
+      if (!existing) {
+        actions.push({ kind: "mcp", action: "create", name: server.name });
+      } else if (!remoteMatchesLocal(existing, server)) {
+        actions.push({
+          kind: "mcp",
+          action: "update",
+          name: server.name,
+          mcpServerId: existing.id,
+          transport_config: mergedTransportConfig(existing.transport_config, server.transport_config),
+        });
+      }
+    }
   }
 
   return {
     url,
     manifest,
     skills,
+    mcpServers,
     remote: remote ? { id: remote.id, guid: remote.guid, name: remote.name } : null,
     actions,
     conflicts,
@@ -303,6 +490,36 @@ export async function applyPush(root, plan, { apiKey, fetchImpl } = {}) {
         apiKey,
         fetchImpl,
         body: { name: skill.name, description: skill.description, content: skill.content },
+      });
+    }
+  }
+
+  const serverByName = new Map((plan.mcpServers ?? []).map((server) => [server.name, server]));
+  for (const action of plan.actions) {
+    if (action.kind !== "mcp") continue;
+    const server = serverByName.get(action.name);
+    if (action.action === "create") {
+      await request(url, `/api/manage/playbooks/${playbookId}/mcp-servers`, {
+        method: "POST",
+        apiKey,
+        fetchImpl,
+        body: {
+          name: server.name,
+          transport_type: server.transport_type,
+          transport_config: server.transport_config,
+        },
+      });
+    } else {
+      // Tools, resources, and description stay out of the body so the hosted
+      // playbook keeps whatever it has curated for them.
+      await request(url, `/api/manage/playbooks/${playbookId}/mcp-servers/${action.mcpServerId}`, {
+        method: "PUT",
+        apiKey,
+        fetchImpl,
+        body: {
+          transport_type: server.transport_type,
+          transport_config: action.transport_config,
+        },
       });
     }
   }

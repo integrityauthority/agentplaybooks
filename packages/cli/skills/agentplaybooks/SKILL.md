@@ -28,26 +28,34 @@ Substitute your variant for `apb` in the commands below.
 | `apb doctor [path] [--json] [--strict]` | Health report: inventory, spec violations, likely hard-coded secrets, insecure MCP URLs, cross-platform drift, 0-100 score | Never |
 | `apb sync [path]` | Plan the canonical `agentplaybook.json` plus platform files missing from enabled targets (claude, cursor, codex, antigravity, hermes) | Plan only |
 | `apb sync [path] --apply` | Write the manifest and missing platform files, with backups under `.agentplaybooks/backups/` | Yes |
+| `apb sync [path] --target=<types>` | Also enable targets the project does not have yet, e.g. `--target=claude,codex` | Plan only without `--apply` |
 | `apb login [--url=<base>]` | Store a user API key (`apb_...`) for a remote; reads `AGENTPLAYBOOKS_API_KEY` first | `~/.agentplaybooks/credentials.json` |
 | `apb playbooks [--json]` | List remote playbooks the key can access | Never |
-| `apb pull <id\|guid> [path] [--apply]` | Download a remote playbook's skills into `.agents/skills/` and link the project | With `--apply` |
-| `apb push [path] [--apply]` | Upload local skills and the manifest to the linked (or a new) remote playbook | With `--apply` |
+| `apb pull <id\|guid> [path] [--apply]` | Download a remote playbook's skills into `.agents/skills/` and MCP servers into `.agents/mcp.json`, then link the project | With `--apply` |
+| `apb push [path] [--apply]` | Upload local skills, MCP servers, and the manifest to the linked (or a new) remote playbook | With `--apply` |
 
 ## Typical workflows
 
 - **"Is my agent config healthy?"** → `apb doctor . --json`, then explain the
   findings by severity with their sources and line numbers.
 - **"Make my Claude skills available in Cursor / ChatGPT (Codex) / Antigravity / Hermes"**
-  → ensure the manifest has the matching enabled target (run `apb sync` once,
-  or add e.g. `{"id": "codex", "type": "codex", "enabled": true, "config": {}}`
-  to `spec.targets` in `agentplaybook.json`), show the user the plan from
-  `apb sync`, then run `apb sync --apply`. Target file mapping: claude →
-  `.claude/skills` + `.mcp.json`; cursor → `.cursor/skills` + `.cursor/mcp.json`;
-  codex → `.codex/skills` + `.codex/config.toml`; antigravity → `.agents/skills`
-  (portable store); hermes → `~/.hermes/skills` (home-scoped).
-- **"Share this project's skills with my team"** → `apb login`, then
-  `apb push` (review the plan), then `apb push --apply`. Give the team the
-  playbook GUID; they run `apb pull <guid> --apply` in their project.
+  → run `apb sync --target=<type>`, show the user the plan, then re-run with
+  `--apply`. Target file mapping: claude → `.claude/skills` + `.mcp.json`;
+  cursor → `.cursor/skills` + `.cursor/mcp.json`; codex → `.codex/skills` +
+  `.codex/config.toml`; antigravity → `.agents/skills` (portable store);
+  hermes → `~/.hermes/skills` (home-scoped).
+- **"Share this project's setup with my team"** → `apb login`, then `apb push`
+  (review the plan), then `apb push --apply`. Give the team the playbook GUID;
+  they run `apb pull <guid> --apply` followed by
+  `apb sync --target=<their tools> --apply`. Skills and MCP servers both make
+  the trip.
+- **"Set this machine up from our team playbook"** → `apb pull <guid> --apply`,
+  then `apb sync --apply`. If the project has no target yet, sync lists the
+  agent tools it detected for this user; pass them via `--target`.
+- **"Which credentials does this playbook need?"** → read `spec.secrets` in
+  `agentplaybook.json`; it lists the environment references the configuration
+  mentions. Values are never stored there — tell the user which variables to
+  set, do not try to fetch or guess values.
 - **CI guard** → `apb doctor --strict --json` exits with code 2 on high or
   critical findings.
 
@@ -65,7 +73,11 @@ Substitute your variant for `apb` in the commands below.
   content that looks like it contains hard-coded credentials — fix the finding
   instead of working around it.
 - Secret values never belong in `agentplaybook.json` or in pushed content;
-  only environment/vault references are allowed.
-- Remote `push`/`pull` cover skills and the manifest. MCP server definitions
-  travel between local platform files only — if the user expects them in the
-  hosted playbook, say so instead of implying it works.
+  only environment/vault references are allowed. `spec.secrets` records which
+  variables the configuration references, never their values.
+- `push` treats local files as authoritative for an MCP server's connection
+  (command, args, env, url, headers) and preserves hosted-only settings
+  (timeouts, auth, access, curated tool lists, descriptions). Remote entries
+  missing locally are never deleted; say so rather than implying a full mirror.
+- OpenAPI federation servers exist only on the hosted side. `pull` reports
+  them; do not hand-write a local equivalent.

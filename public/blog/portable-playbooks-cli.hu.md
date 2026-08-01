@@ -58,15 +58,46 @@ A szinkronmotor tartja az eredeti tervünk garanciáit:
 ## Csapat-playbookok: pull és push
 
 ```bash
-apb login                 # user API kulcs (apb_...) tárolása
-apb push --apply          # skillek + manifest feltöltése hosztolt playbookba
-apb pull <guid> --apply   # a csapattársak lehúzzák a saját projektjükbe
+apb login                              # user API kulcs (apb_...) tárolása
+apb push --apply                       # skillek + MCP-szerverek + manifest → hosztolt playbook
+apb pull <guid> --apply                # a csapattársak lehúzzák a saját projektjükbe
+apb sync --target=claude,codex --apply # …majd be az általuk használt eszközökbe
 ```
 
-A `pull` a skilleket a hordozható `.agents/skills/` tárba teszi; egy ezt
-követő `sync --apply` szétteríti őket minden platformra, amit a csapattársad
-használ — akkor is, ha ő más szerkesztőben dolgozik, mint te. Pont ez a
-lényeg: **a hordozható egység a playbook, nem az eszköz**.
+A skillek *és* az MCP-szerver definíciók is mindkét irányban utaznak. A `pull`
+a hordozható tárba teszi őket (`.agents/skills/`, `.agents/mcp.json`); egy ezt
+követő `sync` szétteríti őket minden platformra, amit a csapattársad használ —
+akkor is, ha ő más szerkesztőben dolgozik, mint te. Pont ez a lényeg: **a
+hordozható egység a playbook, nem az eszköz**.
+
+Két részlet, amiről azonnal kérdeztek minket. Egy: a hosztolt oldal olyan
+dolgokat is tud, amiket egy lokális fájl nem tud kifejezni — kérés-timeoutok,
+auth-beállítás, kurált eszközlisták. A `push` a kapcsolatot frissíti, mindezt
+pedig békén hagyja; sosem lapítja a részletesebb rekordot a szegényesebbre.
+Kettő: egy vadonatúj gépen a hordozható tár az egyetlen dolog a lemezen, és az
+nem deployment target — ezért a `sync` megmondja, milyen ügynök-eszközöket
+talált a felhasználódnál, és mit adj át a `--target`-nek. Csendes üresjárat
+nincs.
+
+## Secretek: a szerződés utazik, a hitelesítőadat nem
+
+Ez az a pont, amit mindenki elnagyolásra számít, úgyhogy mondjuk ki
+kerekperec: **secret-érték soha nem mozdul.** Ami mozog, az az elvárás. A
+`sync` az MCP-konfigurációban lévő minden környezeti hivatkozást összegyűjt a
+manifestbe:
+
+```json
+"secrets": [
+  { "name": "DEPLOY_API_KEY", "ref": "env:DEPLOY_API_KEY", "required": true }
+]
+```
+
+Aki lehúzza a playbookot, onnantól pontosan tudja, mely változókat kell
+beállítania — és közben senki nem küldött el kulcsot semmilyen csatornán. Ha
+inkább egy vaultra mutatsz egy bejegyzéssel, a módosításod túléli a következő
+syncet. A literál hitelesítőadatokat a `doctor` megjelöli, a `push` pedig
+megtagadja a futást, amíg le nem cserélted őket hivatkozásra — ideértve az MCP
+headerben vagy URL-ben ülő hitelesítőadatokat is.
 
 ## Telepítsd Claude Code pluginként
 

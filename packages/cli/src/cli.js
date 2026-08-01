@@ -19,7 +19,7 @@ const HELP = `AgentPlaybooks CLI
 
 Usage:
   agentplaybooks doctor [path] [--json] [--strict] [--global]
-  agentplaybooks sync [path] [--apply] [--json]
+  agentplaybooks sync [path] [--apply] [--json] [--target=<types>]
   agentplaybooks login [--url=<base>]
   agentplaybooks logout [--url=<base>]
   agentplaybooks playbooks [--url=<base>] [--json]
@@ -30,6 +30,8 @@ Commands:
   doctor     Audit agent instructions, skills, MCP configuration, secrets, and drift.
   sync       Plan or apply the canonical manifest and missing platform files
              for enabled targets (claude, cursor, codex, antigravity, hermes).
+             --target=claude,codex enables targets a project does not have yet,
+             which is what a freshly pulled playbook needs.
   login      Store an AgentPlaybooks user API key (apb_...) for a remote.
              Reads AGENTPLAYBOOKS_API_KEY, or prompts on stdin.
   logout     Remove the stored API key for a remote.
@@ -124,7 +126,10 @@ export async function run(args) {
 
   if (command === "sync") {
     if (flags.has("--global")) throw new Error("Global sync is not supported yet.");
-    const plan = await planSync(path.resolve(positional[0] ?? process.cwd()));
+    const requestedTargets = typeof flags.get("--target") === "string"
+      ? flags.get("--target").split(",").map((value) => value.trim()).filter(Boolean)
+      : [];
+    const plan = await planSync(path.resolve(positional[0] ?? process.cwd()), { targets: requestedTargets });
     if (flags.has("--json")) {
       console.log(JSON.stringify({
         action: plan.action,
@@ -133,6 +138,7 @@ export async function run(args) {
         manifest: plan.manifest,
         fileActions: plan.fileActions.map(withoutContent),
         conflicts: plan.conflicts,
+        suggestedTargets: plan.suggestedTargets,
       }, null, 2));
     } else {
       printSyncPlan(plan);

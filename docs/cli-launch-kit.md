@@ -9,22 +9,26 @@ and keep the repository instructions). Canonical URLs:
 
 ## Positioning
 
-**One sentence:** AgentPlaybooks now syncs your agent skills and MCP
-configuration across Claude Code, Cursor, ChatGPT/Codex, Google Antigravity,
-and Hermes Agent — plan first, apply on approval, no silent overwrites.
+**One sentence:** AgentPlaybooks moves a whole agent harness — skills, tools,
+and the credential contract — between Claude Code, Cursor, ChatGPT/Codex,
+Google Antigravity, and Hermes Agent, with no vendor lock-in: plan first, apply
+on approval, no silent overwrites.
 
 **Three proof points:**
 
-1. Write a skill once; `sync --apply` places it in every enabled target,
-   translating MCP definitions between JSON and Codex TOML.
-2. `push`/`pull` move skills and the manifest between a project and a hosted
-   playbook, so a teammate on a different editor gets the same setup.
-3. Conflicting definitions are reported and skipped, secrets never enter the
-   manifest, and `push` refuses content containing hard-coded credentials.
+1. Write a skill or an MCP server once; `sync --apply` places it in every
+   enabled target, translating MCP definitions between JSON and Codex TOML.
+2. `push`/`pull` move skills, MCP servers, and the manifest between a project
+   and a hosted playbook, so a teammate on a different editor — or a fresh
+   machine — gets the same setup with two commands.
+3. Secret values never move: the playbook carries the references
+   (`env:DEPLOY_API_KEY`), `doctor` flags literal credentials without printing
+   them, and `push` refuses to upload them.
 
-Do not claim: real-time sync, MCP servers round-tripping to the hosted
-playbook (local files only in this release), or support for platforms beyond
-the five above.
+Do not claim: real-time sync, deletion mirroring (remote entries missing
+locally are deliberately left alone), OpenAPI federation servers working
+locally, secret *values* syncing, or support for platforms beyond the five
+above.
 
 ## X (280 characters)
 
@@ -48,10 +52,16 @@ three entries plus "…and more" buys the most room.
 2. MCP servers translate between formats: JSON for Claude Code and Cursor,
    TOML for Codex. If a definition can't be represented losslessly, you get a
    conflict instead of a silently mangled config.
-3. It also audits: hard-coded credentials (line numbers only, never values),
+3. Tools round-trip to a hosted playbook too — but a push only updates the
+   connection. Timeouts, auth, curated tool lists that only exist server-side
+   survive. The poorer record never flattens the richer one.
+4. Secrets: no value ever moves. The playbook carries
+   `{"name": "DEPLOY_API_KEY", "ref": "env:DEPLOY_API_KEY"}`. Your teammate
+   learns what to set; nobody mails a key. Literal credentials block the push.
+5. It also audits: hard-coded credentials (line numbers only, never values),
    insecure http:// MCP URLs, Agent Skills spec violations, 0–100 health score.
    `--strict` fails CI.
-4. And it ships as a Claude Code plugin, so the agent runs the workflow:
+6. And it ships as a Claude Code plugin, so the agent runs the workflow:
    `/plugin marketplace add integrityauthority/agentplaybooks`
 
 ## LinkedIn (3,000 character limit)
@@ -81,11 +91,12 @@ three entries plus "…and more" buys the most room.
 > Hermes Agent. MCP definitions are translated between JSON and Codex's TOML
 > automatically.
 >
-> **`push` / `pull`** — move skills and the manifest between a project and a
-> hosted playbook. Your teammate pulls it and syncs into whichever editor they
-> prefer. The playbook is the portable unit, not the tool.
+> **`push` / `pull`** — move skills, MCP servers, and the manifest between a
+> project and a hosted playbook. Your teammate pulls it and syncs into whichever
+> editor they prefer; on a fresh machine that's two commands. The playbook is the
+> portable unit, not the tool.
 >
-> Three design decisions I'd defend in a review:
+> Four design decisions I'd defend in a review:
 >
 > 1. **Plan before apply.** Every mutating command prints what it would do and
 >    changes nothing until you pass `--apply`. Agents shouldn't rewrite your
@@ -93,9 +104,12 @@ three entries plus "…and more" buys the most room.
 > 2. **Conflicts are not merges.** If the same skill has different content in
 >    two tools, that's information — a signal that someone edited one copy. The
 >    CLI reports it and skips it. No last-write-wins.
-> 3. **Secrets are references, never values.** They don't enter the manifest,
->    and `push` refuses to upload content that looks like it contains a
->    hard-coded key.
+> 3. **The poorer record never flattens the richer one.** A hosted MCP server
+>    can carry timeouts, auth, and a curated tool list that no local file can
+>    express. A push updates the connection and leaves the rest intact.
+> 4. **Secrets are references, never values.** The playbook says it needs
+>    `env:DEPLOY_API_KEY`; the value stays in your environment or vault. Literal
+>    credentials get flagged and block the push.
 >
 > One more thing: it ships as a Claude Code plugin, so you can just ask —
 > "audit my agent config", "make my Claude skills available in ChatGPT" — and
@@ -106,6 +120,25 @@ three entries plus "…and more" buys the most room.
 >
 > If you're running agents across more than one tool, I'd genuinely like to
 > know which platform adapter you need next.
+
+## Publishing the CLI to npm
+
+The `agentplaybooks` npm organization exists, so the remaining steps need a
+maintainer with npm credentials — do not paste tokens into a chat or a file.
+
+First release, from a machine that is logged in (`npm login`):
+
+```bash
+cd packages/cli && npm publish --access public --tag alpha
+```
+
+Every release after that can go through CI: add a granular npm token scoped to
+the `@agentplaybooks` org as the repository secret `NPM_TOKEN`, then push a tag
+matching the package version (for example `cli-v0.2.0-alpha.1`), or run the
+"Publish CLI" workflow manually with `dry_run` unchecked. The workflow
+(`.github/workflows/publish-cli.yml`) runs the tests, verifies that the tag
+matches `package.json`, derives the dist-tag from the version, and publishes
+with provenance.
 
 ## Pre-publish checklist
 

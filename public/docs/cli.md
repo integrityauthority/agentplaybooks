@@ -27,8 +27,9 @@ reports:
 ## Sync: one playbook, every agent
 
 ```bash
-apb sync .              # plan only — shows what would be written
-apb sync . --apply      # write the manifest and missing platform files
+apb sync .                       # plan only — shows what would be written
+apb sync . --apply               # write the manifest and missing platform files
+apb sync . --target=codex        # also enable a target the project lacks
 ```
 
 Sync normalizes what it finds into the canonical `agentplaybook.json`
@@ -72,24 +73,55 @@ apb pull <guid> --apply # download skills into .agents/skills/
 apb push --apply        # upload local skills + manifest
 ```
 
-The round trip works in both directions:
+Skills, MCP servers, and the manifest all travel in both directions:
 
-- **Local → hosted** (`push`): skills discovered in any platform folder plus
-  the canonical manifest are uploaded to the linked (or a new) playbook.
-  Remote skills that no longer exist locally are left untouched, secret values
-  are never uploaded, and the CLI refuses to push content that looks like it
-  contains hard-coded credentials.
-- **Hosted → local** (`pull` + `sync --apply`): remote skills land in the
-  portable `.agents/skills/` store and the project is linked via
-  `.agentplaybooks/remote.json`; the follow-up sync fans them out to every
-  enabled platform target, whichever editor your teammate uses.
+- **Local → hosted** (`push`): skills and MCP server definitions discovered in
+  any platform folder, plus the canonical manifest, are uploaded to the linked
+  (or a new) playbook. Local files are authoritative for the connection itself
+  (command, args, env, url, headers); federation settings that only exist on
+  the hosted side — timeouts, auth, access, curated tool lists, descriptions —
+  are preserved, not overwritten. Remote entries that no longer exist locally
+  are left untouched.
+- **Hosted → local** (`pull` + `sync --apply`): remote skills land in
+  `.agents/skills/` and remote MCP servers in `.agents/mcp.json` — the portable
+  store — and the project is linked via `.agentplaybooks/remote.json`. The
+  follow-up sync fans both out to every enabled platform target, whichever
+  editor your teammate uses.
 
-Use `--url=<base>` or `AGENTPLAYBOOKS_URL` for self-hosted deployments.
+On a fresh machine the portable store is the only thing on disk, and it is not
+a deployment target — so nothing would be written. Enable the tools you have:
 
-Scope note for this release: remote `push`/`pull` cover skills and the
-manifest. MCP server definitions are synchronized between local platform
-files (`.mcp.json`, `.cursor/mcp.json`, `.codex/config.toml`) but are not yet
-written to or read from the hosted playbook's MCP server list.
+```bash
+apb pull <guid> --apply
+apb sync --target=claude,codex --apply
+```
+
+`sync` also lists the agent tools it detects for your user when no target is
+enabled, so you know what to pass.
+
+OpenAPI federation servers are a hosted-only capability with no local client
+equivalent; `pull` reports them instead of writing a half-translated config.
+Secret values never move in either direction — see below. Use `--url=<base>`
+or `AGENTPLAYBOOKS_URL` for self-hosted deployments.
+
+## Secrets: the playbook carries the contract, not the credential
+
+A playbook states which credentials it needs; the values stay where they
+belong. `sync` collects every environment reference it finds in your MCP
+configuration (`${VAR}`, `$VAR`, `env:VAR`) into `spec.secrets`:
+
+```json
+"secrets": [
+  { "name": "DEPLOY_API_KEY", "ref": "env:DEPLOY_API_KEY", "required": true }
+]
+```
+
+That makes the playbook portable and self-describing: a teammate who pulls it
+knows exactly which variables to set, without anyone ever transmitting a key.
+If you edit an entry — pointing it at a vault, or marking it optional — your
+version is preserved on the next sync. Literal credential values are never
+written into the manifest and never uploaded; `doctor` flags them and `push`
+refuses to run until they are replaced with references.
 
 ## Claude Code & Claude Cowork plugin
 

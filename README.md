@@ -91,9 +91,11 @@ and `agentplaybooks sync <project>` creates the canonical
 Claude Code (`.claude/skills` + `.mcp.json`), Cursor (`.cursor/skills` +
 `.cursor/mcp.json`), ChatGPT/Codex (`.codex/skills` + `.codex/config.toml`),
 Google Antigravity (`.agents/skills`), and Hermes Agent (`~/.hermes/skills`).
-`login` / `playbooks` / `pull` / `push` synchronize skills and the manifest
-with a hosted playbook using a user API key. All mutating commands are
-plan-only until `--apply`. See [packages/cli/README.md](packages/cli/README.md).
+`login` / `playbooks` / `pull` / `push` synchronize skills, MCP servers, and the
+manifest with a hosted playbook using a user API key; secret values never move,
+only the references the playbook declares in `spec.secrets`. All mutating
+commands are plan-only until `--apply`. See
+[packages/cli/README.md](packages/cli/README.md).
 
 The same package doubles as a Claude Code / Claude Cowork plugin (skill +
 slash commands). Install it from this repository:

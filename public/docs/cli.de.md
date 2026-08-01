@@ -28,8 +28,9 @@ den Plattformordnern und meldet:
 ## Sync: ein Playbook, jeder Agent
 
 ```bash
-apb sync .              # nur Plan — zeigt, was geschrieben würde
-apb sync . --apply      # Manifest und fehlende Plattformdateien schreiben
+apb sync .                       # nur Plan — zeigt, was geschrieben würde
+apb sync . --apply               # Manifest und fehlende Plattformdateien schreiben
+apb sync . --target=codex        # ein Ziel aktivieren, das das Projekt nicht hat
 ```
 
 Sync normalisiert die gefundene Konfiguration in das kanonische
@@ -74,25 +75,59 @@ apb pull <guid> --apply # Skills nach .agents/skills/ herunterladen
 apb push --apply        # lokale Skills + Manifest hochladen
 ```
 
-Der Round-Trip funktioniert in beide Richtungen:
+Skills, MCP-Server und das Manifest reisen alle in beide Richtungen:
 
-- **Lokal → gehostet** (`push`): Skills aus jedem Plattformordner sowie das
-  kanonische Manifest werden in das verknüpfte (oder ein neues) Playbook
-  geladen. Remote-Skills, die lokal nicht mehr existieren, bleiben unberührt,
-  Geheimniswerte werden nie hochgeladen, und die CLI verweigert Inhalte, die
-  hartkodierte Zugangsdaten zu enthalten scheinen.
-- **Gehostet → lokal** (`pull` + `sync --apply`): Remote-Skills landen im
-  portablen `.agents/skills/`-Speicher, das Projekt wird über
-  `.agentplaybooks/remote.json` verknüpft; der anschließende Sync verteilt sie
-  auf alle aktivierten Plattformziele — unabhängig vom Editor Ihres Teams.
+- **Lokal → gehostet** (`push`): Skills und MCP-Server-Definitionen aus jedem
+  Plattformordner sowie das kanonische Manifest werden in das verknüpfte (oder
+  ein neues) Playbook geladen. Für die Verbindung selbst (`command`, `args`,
+  `env`, `url`, `headers`) sind die lokalen Dateien maßgeblich;
+  Federation-Einstellungen, die es nur auf der gehosteten Seite gibt —
+  Timeouts, Auth, Zugriff, kuratierte Tool-Listen, Beschreibungen —, bleiben
+  erhalten und werden nicht überschrieben. Remote-Einträge, die lokal nicht
+  mehr existieren, bleiben unberührt.
+- **Gehostet → lokal** (`pull` + `sync --apply`): Remote-Skills landen in
+  `.agents/skills/` und Remote-MCP-Server in `.agents/mcp.json` — dem portablen
+  Speicher —, und das Projekt wird über `.agentplaybooks/remote.json`
+  verknüpft. Der anschließende Sync verteilt beides auf alle aktivierten
+  Plattformziele — unabhängig vom Editor Ihres Teams.
 
-Für Self-Hosting nutzen Sie `--url=<base>` oder `AGENTPLAYBOOKS_URL`.
+Auf einer frischen Maschine ist der portable Speicher das Einzige auf der
+Platte, und er ist kein Deployment-Ziel — es würde also nichts geschrieben.
+Aktivieren Sie die Tools, die Sie tatsächlich einsetzen:
 
-Umfang dieser Version: Remote-`push`/`pull` deckt Skills und das Manifest ab.
-MCP-Server-Definitionen werden zwischen lokalen Plattformdateien
-(`.mcp.json`, `.cursor/mcp.json`, `.codex/config.toml`) synchronisiert, aber
-noch nicht in die MCP-Server-Liste des gehosteten Playbooks geschrieben oder
-von dort gelesen.
+```bash
+apb pull <guid> --apply
+apb sync --target=claude,codex --apply
+```
+
+Ist kein Ziel aktiviert, listet `sync` außerdem die Agent-Tools auf, die es
+für Ihren Benutzer erkennt — so wissen Sie, was Sie übergeben müssen.
+
+OpenAPI-Federation-Server sind eine rein gehostete Fähigkeit ohne lokales
+Client-Äquivalent; `pull` meldet sie, statt eine halb übersetzte Konfiguration
+zu schreiben. Geheimniswerte bewegen sich in keiner der beiden Richtungen —
+siehe unten. Für Self-Hosting nutzen Sie `--url=<base>` oder
+`AGENTPLAYBOOKS_URL`.
+
+## Secrets: Das Playbook trägt den Vertrag, nicht die Zugangsdaten
+
+Ein Playbook benennt, welche Zugangsdaten es braucht; die Werte bleiben dort,
+wo sie hingehören. `sync` sammelt jede Umgebungsreferenz, die es in Ihrer
+MCP-Konfiguration findet (`${VAR}`, `$VAR`, `env:VAR`), in `spec.secrets`:
+
+```json
+"secrets": [
+  { "name": "DEPLOY_API_KEY", "ref": "env:DEPLOY_API_KEY", "required": true }
+]
+```
+
+Das macht das Playbook portabel und selbstbeschreibend: Wer es zieht, weiß
+genau, welche Variablen zu setzen sind, ohne dass jemals ein Schlüssel
+übertragen wurde. Bearbeiten Sie einen Eintrag — etwa um ihn auf einen Vault
+zu richten oder als optional zu markieren —, bleibt Ihre Version beim nächsten
+Sync erhalten. Literale Zugangsdaten gelangen nie in das Manifest und werden
+nie hochgeladen; `doctor` meldet sie, und `push` verweigert die Ausführung,
+bis sie durch Referenzen ersetzt sind.
 
 ## Claude-Code- & Claude-Cowork-Plugin
 

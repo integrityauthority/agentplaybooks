@@ -56,15 +56,43 @@ The sync engine keeps the guarantees from our original design:
 ## Team playbooks: pull and push
 
 ```bash
-apb login                 # store your user API key (apb_...)
-apb push --apply          # upload skills + manifest to a hosted playbook
-apb pull <guid> --apply   # teammates pull it into their projects
+apb login                              # store your user API key (apb_...)
+apb push --apply                       # skills + MCP servers + manifest → hosted playbook
+apb pull <guid> --apply                # teammates pull it into their projects
+apb sync --target=claude,codex --apply # …and into whichever tools they use
 ```
 
-`pull` drops skills into the portable `.agents/skills/` store; a follow-up
-`sync --apply` fans them out to every platform your teammate uses — even if
-that's a different editor than yours. That's the point: **the playbook is
-the portable unit, not the tool**.
+Skills *and* MCP server definitions travel in both directions. Pull drops them
+into the portable store (`.agents/skills/`, `.agents/mcp.json`); the follow-up
+sync fans them out to every platform your teammate uses — even if that's a
+different editor than yours. That's the point: **the playbook is the portable
+unit, not the tool**.
+
+Two details we got asked about immediately. First, the hosted side knows things
+a local file cannot express — request timeouts, auth configuration, curated
+tool lists. A push updates the connection and leaves all of that alone; it
+never flattens the richer record into the poorer one. Second, on a brand-new
+machine the portable store is the only thing on disk and it isn't a deployment
+target, so `sync` tells you which agent tools it found for your user and what
+to pass to `--target`. No silent no-ops.
+
+## Secrets: the contract travels, the credential doesn't
+
+This is the part people expect to be hand-wavy, so to be explicit: **no secret
+value ever moves.** What moves is the requirement. `sync` collects every
+environment reference in your MCP configuration into the manifest:
+
+```json
+"secrets": [
+  { "name": "DEPLOY_API_KEY", "ref": "env:DEPLOY_API_KEY", "required": true }
+]
+```
+
+A teammate who pulls the playbook now knows exactly which variables to set,
+and nobody sent a key over anything. Point an entry at a vault instead and your
+edit survives the next sync. Literal credentials get flagged by `doctor`, and
+`push` refuses to run until they're replaced by references — including
+credentials sitting in an MCP header or URL.
 
 ## Install it as a Claude Code plugin
 
