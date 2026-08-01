@@ -108,6 +108,8 @@ export type CreatePlaybookInput = {
   description?: string | null;
   visibility?: "public" | "private" | "unlisted";
   config?: Record<string, unknown>;
+  /** Always-on project instructions (AGENTS.md / CLAUDE.md content). */
+  instructions?: string | null;
 };
 
 export async function createPlaybook(
@@ -124,6 +126,7 @@ export async function createPlaybook(
       description: input.description || null,
       visibility: input.visibility || "private",
       config: input.config || {},
+      instructions: input.instructions || null,
     })
     .select()
     .single();

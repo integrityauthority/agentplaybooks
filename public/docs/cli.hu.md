@@ -37,13 +37,13 @@ A sync a talált konfigurációt a kanonikus `agentplaybook.json` manifestbe
 normalizálja, majd legenerálja az engedélyezett deployment targetekről
 hiányzó fájlokat:
 
-| Target | Skillek | MCP-szerverek |
-|---|---|---|
-| `claude` — Claude Code / Claude Cowork | `.claude/skills/<név>/SKILL.md` | `.mcp.json` |
-| `cursor` — Cursor | `.cursor/skills/<név>/SKILL.md` | `.cursor/mcp.json` |
-| `codex` — ChatGPT / OpenAI Codex | `.codex/skills/<név>/SKILL.md` | `.codex/config.toml` |
-| `antigravity` — Google Antigravity | `.agents/skills/<név>/SKILL.md` | — (globális konfig) |
-| `hermes` — Nous Hermes Agent | `~/.hermes/skills/<név>/SKILL.md` | — (globális `config.yaml`) |
+| Target | Skillek | MCP-szerverek | Utasítások |
+|---|---|---|---|
+| `claude` — Claude Code / Claude Cowork | `.claude/skills/<név>/SKILL.md` | `.mcp.json` | `AGENTS.md`-t importáló `CLAUDE.md` |
+| `cursor` — Cursor | `.cursor/skills/<név>/SKILL.md` | `.cursor/mcp.json` | — |
+| `codex` — ChatGPT / OpenAI Codex | `.codex/skills/<név>/SKILL.md` | `.codex/config.toml` | natívan olvassa az `AGENTS.md`-t |
+| `antigravity` — Google Antigravity | `.agents/skills/<név>/SKILL.md` | — (globális konfig) | — |
+| `hermes` — Nous Hermes Agent | `~/.hermes/skills/<név>/SKILL.md` | — (globális `config.yaml`) | natívan olvassa az `AGENTS.md`-t |
 
 A felismert platformok automatikusan engedélyezettek; az `antigravity` és a
 `hermes` opt-in — vegyél fel egy bejegyzést az `agentplaybook.json`
@@ -75,21 +75,33 @@ apb pull <guid> --apply # skillek letöltése a .agents/skills/ tárba
 apb push --apply        # lokális skillek + manifest feltöltése
 ```
 
-A skillek, az MCP-szerverek és a manifest mindkét irányban utaznak:
+Az utasítások, a skillek, az MCP-szerverek és a manifest mindkét irányban
+utaznak:
 
-- **Lokális → hosztolt** (`push`): a bármelyik platformmappában megtalált
-  skillek és MCP-szerver definíciók, valamint a kanonikus manifest felkerülnek
-  a linkelt (vagy egy új) playbookba. Magára a kapcsolatra (command, args, env,
+- **Lokális → hosztolt** (`push`): a projekt utasításfájlja, a bármelyik
+  platformmappában megtalált skillek és MCP-szerver definíciók, valamint a
+  kanonikus manifest felkerülnek a linkelt (vagy egy új) playbookba. Ha a projekt
+  gyökerében több utasításfájl is van, az `AGENTS.md` az erősebb; ha ezek a
+  gyökérfájlok egymásnak ellentmondanak, az konfliktus, a beágyazott
+  utasításfájlok pedig lokálisak maradnak, mert egy alkönyvtárra, nem a projektre
+  vonatkoznak. Magára a kapcsolatra (command, args, env,
   url, headers) a lokális fájlok az irányadóak; a csak a hosztolt oldalon létező
   federációs beállítások — timeoutok, auth, hozzáférés, kurált eszközlisták,
   leírások — megmaradnak, nem íródnak felül. A lokálisan már nem létező távoli
   bejegyzéseket nem bántja.
-- **Hosztolt → lokális** (`pull` + `sync --apply`): a távoli skillek a
-  `.agents/skills/`, a távoli MCP-szerverek pedig a `.agents/mcp.json` fájlba
+- **Hosztolt → lokális** (`pull` + `sync --apply`): a playbook utasításai az
+  `AGENTS.md`-be, a távoli skillek a `.agents/skills/`, a távoli MCP-szerverek
+  pedig a `.agents/mcp.json` fájlba
   kerülnek — vagyis a hordozható tárba —, a projekt pedig a
-  `.agentplaybooks/remote.json`-nal linkelődik. Az ezt követő sync mindkettőt
+  `.agentplaybooks/remote.json`-nal linkelődik. Az ezt követő sync mindet
   szétteríti minden engedélyezett platform-targetre — bármelyik szerkesztőt is
   használja a csapattársad.
+
+A Claude Code a `CLAUDE.md`-t olvassa, az `AGENTS.md`-t nem, viszont támogatja a
+`@` importokat. Ezért a `claude` target nem másolja le az utasításaidat, hanem
+egy `@AGENTS.md`-t tartalmazó `CLAUDE.md`-t ír. Egy igazságforrás van, nincs mi
+elcsússzon. Ha már van `CLAUDE.md`-d ilyen import nélkül, a `sync` ezt jelenti,
+nem írja át a fájlodat.
 
 Egy friss gépen a hordozható tár az egyetlen dolog, ami a lemezen van, és az
 nem deployment target — így önmagában semmi nem íródna ki. Kapcsold be azokat

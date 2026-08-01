@@ -9,8 +9,10 @@ Push the local playbook to the linked (or a new) remote playbook.
    If it fails with a missing-key error, ask the user to run
    `agentplaybooks login` (or set `AGENTPLAYBOOKS_API_KEY`) first — never ask
    them to paste the key into the chat.
-2. Summarize the plan: playbook create/update, skill creates/updates, MCP
-   server creates/updates, and any skipped conflicts. Note that remote entries
+2. Summarize the plan: playbook create/update, instruction-file upload, skill
+   creates/updates, MCP server creates/updates, and any skipped conflicts.
+   An instruction conflict means the project-root `AGENTS.md` and `CLAUDE.md`
+   disagree — the fix is to make one import the other, never to copy text. Note that remote entries
    missing locally are left untouched, that hosted-only MCP settings (timeouts,
    auth, curated tool lists, descriptions) are preserved rather than
    overwritten, and that no secret values are ever uploaded.

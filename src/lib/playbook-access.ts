@@ -13,6 +13,9 @@ export function buildPlaybookUpdate(
   if (body.description !== undefined) update.description = body.description;
   if (body.config !== undefined) update.config = body.config;
   if (body.tags !== undefined) update.tags = body.tags;
+  // Project instructions are content, like the persona and skills, so editors
+  // may maintain them.
+  if (body.instructions !== undefined) update.instructions = body.instructions;
 
   if (role === "owner") {
     if (body.visibility !== undefined) {

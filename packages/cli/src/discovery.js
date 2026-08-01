@@ -46,7 +46,12 @@ export function platformFor(relativePath) {
   const normalized = `/${normalizePath(relativePath).toLowerCase()}`;
   const base = path.basename(relativePath).toLowerCase();
 
-  if (normalized.includes("/.codex/") || base.startsWith("agents.")) return "codex";
+  if (normalized.includes("/.codex/")) return "codex";
+  // `AGENTS.md` is the cross-vendor instruction standard (Codex, Hermes and
+  // others read it), so owning a copy says nothing about which tool is in use.
+  // Only a `.codex/` path means Codex; otherwise a project with AGENTS.md would
+  // get a Codex deployment target it never asked for.
+  if (base.startsWith("agents.")) return "portable";
   // `.mcp.json` is Claude Code's project-scoped MCP configuration file.
   if (normalized.includes("/.claude/") || base === "claude.md" || base === "claude_desktop_config.json" || base === ".mcp.json") return "claude";
   if (normalized.includes("/.cursor/") || base === ".cursorrules") return "cursor";

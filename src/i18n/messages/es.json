@@ -146,7 +146,20 @@
     "forking": "Copiando...",
     "forked": "¡Copiado!",
     "forkSuccess": "Playbook copiado a tu colección",
-    "signInToFork": "Inicia sesión para copiar este playbook"
+    "signInToFork": "Inicia sesión para copiar este playbook",
+    "instructions": {
+      "title": "Instrucciones del Proyecto",
+      "badge": "AGENTS.md / CLAUDE.md",
+      "helper": "La persona define quién es el agente; las instrucciones definen cómo funciona este proyecto. Están siempre activas, como un archivo AGENTS.md o CLAUDE.md en un repositorio.",
+      "label": "Instrucciones (Markdown)",
+      "placeholder": "# Instrucciones del proyecto\n\n## Compilación y pruebas\n- Ejecuta `npm run build` antes de cada commit\n\n## Convenciones\n- Prefiere funciones en lugar de clases",
+      "characterCount": "{count} caracteres",
+      "unsaved": "sin guardar",
+      "saving": "guardando...",
+      "copy": "Copiar instrucciones",
+      "saveError": "No se pudieron guardar las instrucciones. Tus cambios siguen aquí, inténtalo de nuevo.",
+      "tip": "Los cambios se guardan automáticamente. Se admite Markdown - usa títulos y viñetas cortas para que el agente pueda seguir las reglas con facilidad."
+    }
   },
   "apiKeys": {
     "title": "Claves API",

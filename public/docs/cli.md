@@ -36,13 +36,13 @@ Sync normalizes what it finds into the canonical `agentplaybook.json`
 manifest, then generates the files missing from each enabled deployment
 target:
 
-| Target | Skills | MCP servers |
-|---|---|---|
-| `claude` — Claude Code / Claude Cowork | `.claude/skills/<name>/SKILL.md` | `.mcp.json` |
-| `cursor` — Cursor | `.cursor/skills/<name>/SKILL.md` | `.cursor/mcp.json` |
-| `codex` — ChatGPT / OpenAI Codex | `.codex/skills/<name>/SKILL.md` | `.codex/config.toml` |
-| `antigravity` — Google Antigravity | `.agents/skills/<name>/SKILL.md` | — (global config) |
-| `hermes` — Nous Hermes Agent | `~/.hermes/skills/<name>/SKILL.md` | — (global `config.yaml`) |
+| Target | Skills | MCP servers | Instructions |
+|---|---|---|---|
+| `claude` — Claude Code / Claude Cowork | `.claude/skills/<name>/SKILL.md` | `.mcp.json` | `CLAUDE.md` importing `AGENTS.md` |
+| `cursor` — Cursor | `.cursor/skills/<name>/SKILL.md` | `.cursor/mcp.json` | — |
+| `codex` — ChatGPT / OpenAI Codex | `.codex/skills/<name>/SKILL.md` | `.codex/config.toml` | reads `AGENTS.md` natively |
+| `antigravity` — Google Antigravity | `.agents/skills/<name>/SKILL.md` | — (global config) | — |
+| `hermes` — Nous Hermes Agent | `~/.hermes/skills/<name>/SKILL.md` | — (global `config.yaml`) | reads `AGENTS.md` natively |
 
 Detected platforms are enabled automatically; `antigravity` and `hermes` are
 opt-in — add an entry to `spec.targets` in `agentplaybook.json`:
@@ -73,20 +73,30 @@ apb pull <guid> --apply # download skills into .agents/skills/
 apb push --apply        # upload local skills + manifest
 ```
 
-Skills, MCP servers, and the manifest all travel in both directions:
+Instructions, skills, MCP servers, and the manifest all travel in both
+directions:
 
-- **Local → hosted** (`push`): skills and MCP server definitions discovered in
-  any platform folder, plus the canonical manifest, are uploaded to the linked
-  (or a new) playbook. Local files are authoritative for the connection itself
+- **Local → hosted** (`push`): the project's instruction file, the skills and
+  MCP server definitions discovered in any platform folder, plus the canonical
+  manifest, are uploaded to the linked (or a new) playbook. `AGENTS.md` wins when
+  several root instruction files exist; if they disagree with each other that is
+  a conflict, and nested instruction files stay local because they scope a
+  subdirectory rather than the project. Local files are authoritative for the connection itself
   (command, args, env, url, headers); federation settings that only exist on
   the hosted side — timeouts, auth, access, curated tool lists, descriptions —
   are preserved, not overwritten. Remote entries that no longer exist locally
   are left untouched.
-- **Hosted → local** (`pull` + `sync --apply`): remote skills land in
-  `.agents/skills/` and remote MCP servers in `.agents/mcp.json` — the portable
-  store — and the project is linked via `.agentplaybooks/remote.json`. The
-  follow-up sync fans both out to every enabled platform target, whichever
-  editor your teammate uses.
+- **Hosted → local** (`pull` + `sync --apply`): the playbook's instructions land
+  in `AGENTS.md`, remote skills in `.agents/skills/`, and remote MCP servers in
+  `.agents/mcp.json`, and the project is linked via
+  `.agentplaybooks/remote.json`. The follow-up sync fans them out to every
+  enabled platform target, whichever editor your teammate uses.
+
+Claude Code reads `CLAUDE.md` and does not read `AGENTS.md`, but it does support
+`@` imports. So the `claude` target does not copy your instructions — it writes a
+`CLAUDE.md` containing `@AGENTS.md`. One source of truth, nothing to drift. If you
+already have a `CLAUDE.md` without that import, `sync` says so instead of
+rewriting your file.
 
 On a fresh machine the portable store is the only thing on disk, and it is not
 a deployment target — so nothing would be written. Enable the tools you have:

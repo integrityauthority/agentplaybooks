@@ -9,18 +9,20 @@ and keep the repository instructions). Canonical URLs:
 
 ## Positioning
 
-**One sentence:** AgentPlaybooks moves a whole agent harness — skills, tools,
-and the credential contract — between Claude Code, Cursor, ChatGPT/Codex,
-Google Antigravity, and Hermes Agent, with no vendor lock-in: plan first, apply
-on approval, no silent overwrites.
+**One sentence:** AgentPlaybooks moves a whole agent harness — project
+instructions, skills, tools, and the credential contract — between Claude Code,
+Cursor, ChatGPT/Codex, Google Antigravity, and Hermes Agent, with no vendor
+lock-in: plan first, apply on approval, no silent overwrites.
 
 **Three proof points:**
 
-1. Write a skill or an MCP server once; `sync --apply` places it in every
-   enabled target, translating MCP definitions between JSON and Codex TOML.
-2. `push`/`pull` move skills, MCP servers, and the manifest between a project
-   and a hosted playbook, so a teammate on a different editor — or a fresh
-   machine — gets the same setup with two commands.
+1. Write an instruction file, a skill, or an MCP server once; `sync --apply`
+   places it in every enabled target, translating MCP definitions between JSON
+   and Codex TOML, and bridging `AGENTS.md` into `CLAUDE.md` by import rather
+   than by copy.
+2. `push`/`pull` move instructions, skills, MCP servers, and the manifest between
+   a project and a hosted playbook, so a teammate on a different editor — or a
+   fresh machine — gets the same setup with two commands.
 3. Secret values never move: the playbook carries the references
    (`env:DEPLOY_API_KEY`), `doctor` flags literal credentials without printing
    them, and `push` refuses to upload them.

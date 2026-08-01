@@ -11,6 +11,11 @@ definitions — consistent across AI clients and shareable as a portable
 "playbook" (`agentplaybook.json` manifest, optionally synced with a hosted
 playbook on agentplaybooks.ai).
 
+A hosted playbook keeps two different things apart: the **persona** is who the
+agent is (identity, portable between projects), while **instructions** are the
+always-on rules of one project (`AGENTS.md` / `CLAUDE.md` content). The CLI syncs
+instructions; it never touches the persona.
+
 ## Locating the CLI
 
 The CLI is zero-dependency Node.js (>= 20). Try in this order:
@@ -31,8 +36,8 @@ Substitute your variant for `apb` in the commands below.
 | `apb sync [path] --target=<types>` | Also enable targets the project does not have yet, e.g. `--target=claude,codex` | Plan only without `--apply` |
 | `apb login [--url=<base>]` | Store a user API key (`apb_...`) for a remote; reads `AGENTPLAYBOOKS_API_KEY` first | `~/.agentplaybooks/credentials.json` |
 | `apb playbooks [--json]` | List remote playbooks the key can access | Never |
-| `apb pull <id\|guid> [path] [--apply]` | Download a remote playbook's skills into `.agents/skills/` and MCP servers into `.agents/mcp.json`, then link the project | With `--apply` |
-| `apb push [path] [--apply]` | Upload local skills, MCP servers, and the manifest to the linked (or a new) remote playbook | With `--apply` |
+| `apb pull <id\|guid> [path] [--apply]` | Download a playbook's instructions into `AGENTS.md`, skills into `.agents/skills/`, and MCP servers into `.agents/mcp.json`, then link the project | With `--apply` |
+| `apb push [path] [--apply]` | Upload local instructions, skills, MCP servers, and the manifest to the linked (or a new) remote playbook | With `--apply` |
 
 ## Typical workflows
 
@@ -56,6 +61,10 @@ Substitute your variant for `apb` in the commands below.
   `agentplaybook.json`; it lists the environment references the configuration
   mentions. Values are never stored there — tell the user which variables to
   set, do not try to fetch or guess values.
+- **"Share our project rules with the team"** → the project-root instruction
+  file travels with `push`. If `AGENTS.md` and `CLAUDE.md` disagree, `push`
+  reports a conflict: ask which one is canonical, make the other a
+  `@AGENTS.md` import, then re-run.
 - **CI guard** → `apb doctor --strict --json` exits with code 2 on high or
   critical findings.
 
@@ -81,3 +90,7 @@ Substitute your variant for `apb` in the commands below.
   missing locally are never deleted; say so rather than implying a full mirror.
 - OpenAPI federation servers exist only on the hosted side. `pull` reports
   them; do not hand-write a local equivalent.
+- Claude Code reads `CLAUDE.md`, not `AGENTS.md`. The `claude` target therefore
+  writes a `CLAUDE.md` that imports `AGENTS.md` instead of duplicating the text.
+  Never resolve an instruction conflict by copying content between the two —
+  make one import the other.

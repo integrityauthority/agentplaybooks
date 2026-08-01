@@ -143,6 +143,19 @@ async function readLocalFile(root, relativePath) {
 const LOCAL_TRANSPORT_KEYS = ["command", "args", "env", "url", "headers"];
 const PORTABLE_MCP_PATH = ".agents/mcp.json";
 
+// Which project-root instruction file represents the playbook when several
+// exist. `AGENTS.md` is the cross-vendor standard, so it wins; the rest are
+// platform-specific spellings of the same thing. `AGENTS.override.md` is
+// deliberately absent: an override is a local decision, not shared state.
+const INSTRUCTION_PRECEDENCE = [
+  "AGENTS.md",
+  "CLAUDE.md",
+  "GEMINI.md",
+  "copilot-instructions.md",
+  ".cursorrules",
+];
+const PORTABLE_INSTRUCTIONS_PATH = "AGENTS.md";
+
 function localMcpDefinition(server) {
   const config = server.transport_config ?? {};
   if (server.transport_type === "stdio") {
@@ -225,6 +238,17 @@ export async function planPull(root, ref, { url, apiKey, fetchImpl } = {}) {
       actions.push({ kind: "skill", name: skill.name, action: "create", path: relativePath, content });
     } else if (existing !== content) {
       conflicts.push({ kind: "skill", name: skill.name, reason: `Local ${relativePath} differs from the remote skill.` });
+    }
+  }
+
+  const remoteInstructions = typeof playbook.instructions === "string" ? normalizeText(playbook.instructions) : "";
+  if (remoteInstructions.trim().length > 0) {
+    const content = remoteInstructions.endsWith("\n") ? remoteInstructions : `${remoteInstructions}\n`;
+    const existing = await readLocalFile(root, PORTABLE_INSTRUCTIONS_PATH);
+    if (existing === null) {
+      actions.push({ kind: "instructions", name: PORTABLE_INSTRUCTIONS_PATH, action: "create", path: PORTABLE_INSTRUCTIONS_PATH, content });
+    } else if (existing !== content) {
+      conflicts.push({ kind: "instructions", name: PORTABLE_INSTRUCTIONS_PATH, reason: `Local ${PORTABLE_INSTRUCTIONS_PATH} differs from the playbook's instructions.` });
     }
   }
 
@@ -323,6 +347,32 @@ function localSkillsForPush(report, conflicts) {
   return skills;
 }
 
+/**
+ * The project-root instruction file that represents this playbook. Nested
+ * instruction files scope a subdirectory rather than the project, so they stay
+ * local. Root files that disagree with each other are a conflict: picking one
+ * would quietly publish a stale copy.
+ */
+function localInstructionsForPush(report, conflicts) {
+  const candidates = report.inventory.instructions.filter((item) => !item.source.includes("/")
+    && INSTRUCTION_PRECEDENCE.includes(item.source));
+  if (candidates.length === 0) return null;
+
+  if (new Set(candidates.map((item) => item.digest)).size > 1) {
+    conflicts.push({
+      kind: "instructions",
+      name: candidates.map((item) => item.source).sort().join(", "),
+      reason: "Project-root instruction files differ from each other; align them before pushing.",
+    });
+    return null;
+  }
+
+  const ordered = [...candidates].sort(
+    (a, b) => INSTRUCTION_PRECEDENCE.indexOf(a.source) - INSTRUCTION_PRECEDENCE.indexOf(b.source),
+  );
+  return { source: ordered[0].source, content: ordered[0].content };
+}
+
 function localMcpServersForPush(report, conflicts) {
   const groups = new Map();
   for (const server of report.inventory.mcpServers) {
@@ -375,10 +425,12 @@ export async function planPush(root, { url, apiKey, fetchImpl } = {}) {
   const conflicts = [];
   const skills = localSkillsForPush(report, conflicts);
   const mcpServers = localMcpServersForPush(report, conflicts);
+  const instructions = localInstructionsForPush(report, conflicts);
 
   const uploadedSources = new Set([
     ...skills.map((skill) => skill.source),
     ...mcpServers.flatMap((server) => server.sources),
+    ...(instructions ? [instructions.source] : []),
   ]);
   const leaking = report.findings.filter((item) => item.code === "secret.hardcoded"
     && uploadedSources.has(item.source));
@@ -397,6 +449,9 @@ export async function planPush(root, { url, apiKey, fetchImpl } = {}) {
   const actions = [];
   if (!remote) {
     actions.push({ kind: "playbook", action: "create", name: manifest.metadata.displayName || manifest.metadata.name });
+    if (instructions) {
+      actions.push({ kind: "instructions", action: "create", name: instructions.source });
+    }
     for (const skill of skills) {
       actions.push({ kind: "skill", action: "create", name: skill.name });
     }
@@ -406,6 +461,11 @@ export async function planPush(root, { url, apiKey, fetchImpl } = {}) {
   } else {
     if (canonicalJson(remote.config?.agentplaybook ?? null) !== canonicalJson(manifest)) {
       actions.push({ kind: "playbook", action: "update-config", name: remote.name });
+    }
+    // Absent local instructions leave the remote alone, the same way a missing
+    // skill is never treated as a deletion.
+    if (instructions && normalizeText(remote.instructions ?? "") !== instructions.content) {
+      actions.push({ kind: "instructions", action: remote.instructions ? "update" : "create", name: instructions.source });
     }
     const remoteSkills = new Map((remote.skills ?? []).map((skill) => [skill.name, skill]));
     for (const skill of skills) {
@@ -438,6 +498,7 @@ export async function planPush(root, { url, apiKey, fetchImpl } = {}) {
     manifest,
     skills,
     mcpServers,
+    instructions,
     remote: remote ? { id: remote.id, guid: remote.guid, name: remote.name } : null,
     actions,
     conflicts,
@@ -450,6 +511,7 @@ export async function applyPush(root, plan, { apiKey, fetchImpl } = {}) {
   let guid = plan.remote?.guid ?? null;
   let name = plan.remote?.name ?? null;
 
+  const instructionsAction = plan.actions.find((action) => action.kind === "instructions");
   const createAction = plan.actions.find((action) => action.kind === "playbook" && action.action === "create");
   if (createAction) {
     const created = await request(url, "/api/manage/playbooks", {
@@ -459,18 +521,28 @@ export async function applyPush(root, plan, { apiKey, fetchImpl } = {}) {
       body: {
         name: createAction.name,
         config: { agentplaybook: plan.manifest },
+        ...(instructionsAction ? { instructions: plan.instructions.content } : {}),
       },
     });
     playbookId = created.id;
     guid = created.guid;
     name = created.name;
-  } else if (plan.actions.some((action) => action.kind === "playbook" && action.action === "update-config")) {
-    await request(url, `/api/manage/playbooks/${playbookId}`, {
-      method: "PUT",
-      apiKey,
-      fetchImpl,
-      body: { config: { agentplaybook: plan.manifest } },
-    });
+  } else {
+    // Config and instructions are separate columns but one resource, so a
+    // single request carries whichever of them changed.
+    const update = {};
+    if (plan.actions.some((action) => action.kind === "playbook" && action.action === "update-config")) {
+      update.config = { agentplaybook: plan.manifest };
+    }
+    if (instructionsAction) update.instructions = plan.instructions.content;
+    if (Object.keys(update).length > 0) {
+      await request(url, `/api/manage/playbooks/${playbookId}`, {
+        method: "PUT",
+        apiKey,
+        fetchImpl,
+        body: update,
+      });
+    }
   }
 
   const skillByName = new Map(plan.skills.map((skill) => [skill.name, skill]));

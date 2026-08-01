@@ -16,8 +16,9 @@ import {
   type FederationAuditEvent,
 } from "@/lib/mcp/federation";
 import { decryptMcpSecrets } from "@/lib/mcp/secrets";
+import { composePlaybookSystemPrompt } from "@/lib/playbook-prompt";
 
-type PersonaSource = Pick<Playbook, "id" | "persona_name" | "persona_system_prompt" | "persona_metadata">;
+type PersonaSource = Pick<Playbook, "id" | "persona_name" | "persona_system_prompt" | "persona_metadata" | "instructions">;
 
 // MCP Protocol implementation for Cloudflare Workers / Next.js
 // Supports: tools/list, resources/list, resources/read, tools/call
@@ -27,7 +28,13 @@ function playbookToPersona(playbook: PersonaSource) {
     id: playbook.id,
     playbook_id: playbook.id,
     name: playbook.persona_name || "Assistant",
-    system_prompt: playbook.persona_system_prompt || "You are a helpful AI assistant.",
+    // An MCP client applies one system prompt, so it receives the persona with
+    // this project's always-on instructions appended. The raw instructions are
+    // published separately in the manifest under `_playbook.instructions`.
+    system_prompt: composePlaybookSystemPrompt(
+      playbook.persona_system_prompt || "You are a helpful AI assistant.",
+      playbook.instructions,
+    ),
     metadata: playbook.persona_metadata ?? {},
   };
 }
@@ -170,7 +177,7 @@ app.get("/", async (c) => {
     .from("playbooks")
     // Written as one literal: supabase-js infers the row type from the select
     // string at compile time, which a concatenated expression defeats.
-    .select("id, user_id, publisher_id, guid, name, description, config, visibility, star_count, tags, persona_name, persona_system_prompt, persona_metadata, created_at, updated_at");
+    .select("id, user_id, publisher_id, guid, name, description, config, visibility, star_count, tags, persona_name, persona_system_prompt, persona_metadata, instructions, created_at, updated_at");
 
   if (isUuid) {
     query = query.eq("id", guid);
@@ -267,6 +274,10 @@ app.get("/", async (c) => {
         systemPrompt: persona.system_prompt,
         metadata: persona.metadata,
       },
+      // Always-on project instructions, published as their own field so a
+      // client can show or diff them. Omitted when unset, which keeps the
+      // manifest identical for playbooks that never set them.
+      instructions: playbook.instructions || undefined,
     },
   };
 
@@ -295,7 +306,7 @@ app.post("/", async (c) => {
   // Get playbook - try public first, then fallback to API key auth for private playbooks
   let query = supabase
     .from("playbooks")
-    .select("id, user_id, persona_name, persona_system_prompt, persona_metadata");
+    .select("id, user_id, persona_name, persona_system_prompt, persona_metadata, instructions");
 
   if (isUuid) {
     query = query.eq("id", guid);
@@ -314,7 +325,7 @@ app.post("/", async (c) => {
       const serviceSupabase = getServiceSupabase();
       let privateQuery = serviceSupabase
         .from("playbooks")
-        .select("id, user_id, persona_name, persona_system_prompt, persona_metadata");
+        .select("id, user_id, persona_name, persona_system_prompt, persona_metadata, instructions");
 
       if (isUuid) {
         privateQuery = privateQuery.eq("id", guid);
@@ -1903,6 +1914,7 @@ use_secret({
             if (args.persona_name !== undefined) updates.persona_name = args.persona_name;
             if (args.persona_system_prompt !== undefined) updates.persona_system_prompt = args.persona_system_prompt;
             if (args.persona_metadata !== undefined) updates.persona_metadata = args.persona_metadata;
+            if (args.instructions !== undefined) updates.instructions = args.instructions;
 
             if (Object.keys(updates).length === 0) {
               throw new Error("No fields to update");
@@ -1914,7 +1926,7 @@ use_secret({
               .from("playbooks")
               .update(updates)
               .eq("id", playbook.id)
-              .select("id, persona_name, persona_system_prompt, persona_metadata, updated_at")
+              .select("id, persona_name, persona_system_prompt, persona_metadata, instructions, updated_at")
               .single();
 
             if (error) throw new Error(error.message);

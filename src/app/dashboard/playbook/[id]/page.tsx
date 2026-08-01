@@ -33,13 +33,15 @@ import {
   Tag,
   Puzzle,
   UsersRound,
-  FileText
+  FileText,
+  ScrollText
 } from "lucide-react";
 import type { Playbook, Persona, Skill, MCPServer, PlaybookRun, Canvas, Memory, ApiKey } from "@/lib/supabase/types";
 import { ChatGPTIcon, ClaudeIcon, MarkdownIcon } from "@/components/ui/ai-icons";
 
 // Import editor components
 import { PersonaEditor } from "@/components/playbook/PersonaEditor";
+import { InstructionsEditor } from "@/components/playbook/InstructionsEditor";
 import { SkillEditor } from "@/components/playbook/SkillEditor";
 import { McpServerEditor } from "@/components/playbook/McpServerEditor";
 import { MemoryEditor } from "@/components/playbook/MemoryEditor";
@@ -248,6 +250,12 @@ export default function PlaybookEditorPage({ params }: { params: Promise<{ id: s
     setHasChanges(true);
   }, [playbook]);
 
+  // Instructions save themselves through the InstructionsEditor, so we only
+  // sync local state here (no hasChanges flag, nothing left to save).
+  const handleInstructionsUpdate = useCallback((instructions: string) => {
+    setPlaybook((prev) => (prev ? { ...prev, instructions } : prev));
+  }, []);
+
   const handleAddSkill = async () => {
     const defaultName = `new_skill_${skills.length + 1}`;
 
@@ -394,6 +402,7 @@ export default function PlaybookEditorPage({ params }: { params: Promise<{ id: s
           persona_name: playbook.persona_name,
           persona_system_prompt: playbook.persona_system_prompt,
           persona_metadata: playbook.persona_metadata,
+          instructions: playbook.instructions,
         }),
       });
 
@@ -542,6 +551,12 @@ export default function PlaybookEditorPage({ params }: { params: Promise<{ id: s
 
     if (metadata) {
       lines.push("", "## Metadata", "```json", metadata, "```");
+    }
+
+    // Project instructions follow the persona: identity first, then the rules
+    // of this specific project. This is the same order runtimes compose them in.
+    if (playbook.instructions?.trim()) {
+      lines.push("", "## Project instructions", "", playbook.instructions.trim());
     }
 
     return lines.join("\n");
@@ -1847,6 +1862,29 @@ export default function PlaybookEditorPage({ params }: { params: Promise<{ id: s
                       Persona not loaded.
                     </div>
                   )}
+                </div>
+
+                {/* Project instructions (AGENTS.md / CLAUDE.md) */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-sm font-medium text-neutral-600 dark:text-slate-400 flex items-center gap-2">
+                      <ScrollText className="h-4 w-4 text-blue-500 dark:text-blue-400" />
+                      {t("editor.instructions.title")}
+                    </label>
+                    <span className="text-xs text-neutral-500 dark:text-slate-500">
+                      {t("editor.instructions.badge")}
+                    </span>
+                  </div>
+                  <p className="text-xs text-neutral-500 dark:text-slate-500">
+                    {t("editor.instructions.helper")}
+                  </p>
+
+                  <InstructionsEditor
+                    instructions={playbook.instructions}
+                    storage={storage}
+                    readOnly={!canEdit}
+                    onUpdate={handleInstructionsUpdate}
+                  />
                 </div>
 
                 {/* Tags */}

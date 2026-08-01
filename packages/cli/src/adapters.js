@@ -230,6 +230,39 @@ function mcpActions(report, targetIds, conflicts, { root, homedir }) {
   return actions;
 }
 
+// Claude Code reads CLAUDE.md and does not read AGENTS.md, but it does support
+// `@path` imports inside CLAUDE.md (see
+// https://code.claude.com/docs/en/memory.md). So the bridge is a pointer file,
+// not a copy: no duplicated text means the two can never drift apart.
+const CLAUDE_IMPORT_LINE = "@AGENTS.md";
+const CLAUDE_BRIDGE_CONTENT = `# Project instructions\n\n${CLAUDE_IMPORT_LINE}\n`;
+
+async function instructionActions(report, targetIds, conflicts, { root }) {
+  if (!targetIds.includes("claude")) return [];
+  const hasAgentsFile = report.inventory.instructions.some((item) => item.source === "AGENTS.md");
+  if (!hasAgentsFile) return [];
+
+  const existing = report.inventory.instructions.find((item) => item.source === "CLAUDE.md");
+  if (!existing) {
+    return [{
+      kind: "instructions",
+      target: "claude",
+      name: "CLAUDE.md",
+      action: "create",
+      path: "CLAUDE.md",
+      absolutePath: path.join(root, "CLAUDE.md"),
+      content: CLAUDE_BRIDGE_CONTENT,
+      from: "AGENTS.md",
+    }];
+  }
+  // An existing CLAUDE.md is the user's file. Rewriting it is not ours to do,
+  // but staying silent would hide that Claude Code never sees AGENTS.md.
+  if (!existing.content.includes(CLAUDE_IMPORT_LINE)) {
+    conflicts.push(conflict("claude", "instructions", "CLAUDE.md", `CLAUDE.md does not import AGENTS.md, so Claude Code will not load it. Add a '${CLAUDE_IMPORT_LINE}' line.`, ["CLAUDE.md", "AGENTS.md"]));
+  }
+  return [];
+}
+
 /**
  * Which agent tools this user appears to have installed. Used to suggest
  * targets when a project has none — for example right after `pull` on a new
@@ -260,6 +293,7 @@ export async function planAdapters(report, targets, { homedir = os.homedir() } =
     .map((target) => target.type);
   const conflicts = [];
   const actions = [
+    ...await instructionActions(report, targetIds, conflicts, { root }),
     ...await skillActions(report, targetIds, conflicts, { root, homedir }),
     ...mcpActions(report, targetIds, conflicts, { root, homedir }),
   ];

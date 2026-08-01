@@ -31,6 +31,9 @@ export type PlaybooksRow = {
   persona_name: string | null;
   persona_system_prompt: string | null;
   persona_metadata: Record<string, unknown> | null;
+  // Always-on project instructions (AGENTS.md / CLAUDE.md content). The persona
+  // says who the agent is; this says how this project works.
+  instructions: string | null;
   created_at: string;
   updated_at: string;
 };

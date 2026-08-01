@@ -26,10 +26,15 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { name, description, is_public, visibility, config } = body;
+    const { name, description, is_public, visibility, config, instructions } = body;
 
     if (!name) {
         return NextResponse.json({ error: "Name is required" }, { status: 400 });
+    }
+
+    // Project instructions are optional; accept a string or an explicit null.
+    if (instructions !== undefined && instructions !== null && typeof instructions !== "string") {
+        return NextResponse.json({ error: "Invalid instructions" }, { status: 400 });
     }
 
     // Determine visibility
@@ -49,6 +54,7 @@ export async function POST(request: NextRequest) {
             description: description || null,
             visibility: visibilityValue,
             config: config || {},
+            instructions: instructions || null,
         });
         return NextResponse.json(data, { status: 201 });
     } catch (error) {

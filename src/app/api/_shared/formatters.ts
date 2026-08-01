@@ -1,5 +1,6 @@
 import type { Playbook, Skill, MCPServer, Persona } from "@/lib/supabase/types";
 import { PLAYBOOK_TOOLS } from "@/app/api/_shared/playbook-tools";
+import { composePlaybookSystemPrompt } from "@/lib/playbook-prompt";
 
 export type PlaybookWithExports = Playbook & {
     current_user_role?: "owner" | "editor" | "viewer";
@@ -374,8 +375,14 @@ export function formatAsMCP(playbook: PlaybookWithExports) {
         capabilities: { tools: {}, resources: {} },
         tools,
         resources,
-        persona: persona ? { name: persona.name, systemPrompt: persona.system_prompt } : null,
-        personas: Array.isArray(playbook.personas) ? playbook.personas.map((p) => ({ name: p.name, systemPrompt: p.system_prompt })) : [],
+        // The client applies one system prompt, so the persona carries this
+        // project's always-on instructions appended after it. They are also
+        // published raw below, so a client can show them on their own.
+        persona: persona
+            ? { name: persona.name, systemPrompt: composePlaybookSystemPrompt(persona.system_prompt, playbook.instructions) }
+            : null,
+        personas: Array.isArray(playbook.personas) ? playbook.personas.map((p) => ({ name: p.name, systemPrompt: composePlaybookSystemPrompt(p.system_prompt, playbook.instructions) })) : [],
+        instructions: playbook.instructions || undefined,
     };
 }
 
@@ -399,7 +406,9 @@ export function formatAsAnthropic(playbook: PlaybookWithExports) {
 
     return {
         playbook: { name: playbook.name, description: playbook.description, guid: playbook.guid },
-        system_prompt: persona?.name && persona?.system_prompt ? `## ${persona.name}\n\n${persona.system_prompt}` : null,
+        system_prompt: persona?.name && persona?.system_prompt
+            ? composePlaybookSystemPrompt(`## ${persona.name}\n\n${persona.system_prompt}`, playbook.instructions)
+            : null,
         tools,
         mcp_servers: playbook.mcp_servers.map((mcp) => ({
             name: mcp.name,

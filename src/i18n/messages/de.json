@@ -146,7 +146,20 @@
     "forking": "Kopiere...",
     "forked": "Kopiert!",
     "forkSuccess": "Playbook in Ihre Sammlung kopiert",
-    "signInToFork": "Anmelden, um dieses Playbook zu kopieren"
+    "signInToFork": "Anmelden, um dieses Playbook zu kopieren",
+    "instructions": {
+      "title": "Projektanweisungen",
+      "badge": "AGENTS.md / CLAUDE.md",
+      "helper": "Die Persona legt fest, wer der Agent ist; die Anweisungen legen fest, wie dieses Projekt funktioniert. Sie gelten immer, wie eine AGENTS.md- oder CLAUDE.md-Datei in einem Repository.",
+      "label": "Anweisungen (Markdown)",
+      "placeholder": "# Projektanweisungen\n\n## Build und Tests\n- Vor jedem Commit `npm run build` ausführen\n\n## Konventionen\n- Funktionen statt Klassen bevorzugen",
+      "characterCount": "{count} Zeichen",
+      "unsaved": "nicht gespeichert",
+      "saving": "speichere...",
+      "copy": "Anweisungen kopieren",
+      "saveError": "Die Anweisungen konnten nicht gespeichert werden. Ihre Änderungen sind noch vorhanden, bitte versuchen Sie es erneut.",
+      "tip": "Änderungen werden automatisch gespeichert. Markdown wird unterstützt - verwenden Sie Überschriften und kurze Stichpunkte, damit der Agent die Regeln leicht befolgen kann."
+    }
   },
   "apiKeys": {
     "title": "API-Schlüssel",

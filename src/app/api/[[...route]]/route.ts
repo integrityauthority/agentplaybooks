@@ -1068,10 +1068,16 @@ app.post("/manage/playbooks", async (c) => {
     persona_name,
     persona_system_prompt,
     persona_metadata,
+    instructions,
   } = body;
 
   if (!name) {
     return c.json({ error: "Name is required" }, 400);
+  }
+
+  // Project instructions are optional; accept a string or an explicit null.
+  if (instructions !== undefined && instructions !== null && typeof instructions !== "string") {
+    return c.json({ error: "Invalid instructions" }, 400);
   }
 
   const supabase = getServiceSupabase();
@@ -1097,6 +1103,7 @@ app.post("/manage/playbooks", async (c) => {
       persona_name,
       persona_system_prompt,
       persona_metadata: persona_metadata || {},
+      instructions: instructions || null,
     })
     .select()
     .single();

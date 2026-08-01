@@ -89,6 +89,7 @@ const MCP_TOOLS = [
         name: { type: "string", description: "Name of the playbook" },
         description: { type: "string", description: "Description of what the playbook is for" },
         visibility: { type: "string", enum: ["public", "private", "unlisted"], description: "Visibility of the playbook", default: "private" },
+        instructions: { type: "string", description: "Always-on project instructions (the AGENTS.md / CLAUDE.md content). Separate from the persona: the persona is who the agent is, these are the rules of this project." },
       },
       required: ["name"],
     },
@@ -106,7 +107,7 @@ const MCP_TOOLS = [
   },
   {
     name: "update_playbook",
-    description: "Update a playbook's name, description, or visibility.",
+    description: "Update a playbook's name, description, visibility, or project instructions.",
     inputSchema: {
       type: "object",
       properties: {
@@ -114,6 +115,7 @@ const MCP_TOOLS = [
         name: { type: "string", description: "New name" },
         description: { type: "string", description: "New description" },
         visibility: { type: "string", enum: ["public", "private", "unlisted"], description: "New visibility" },
+        instructions: { type: "string", description: "New always-on project instructions (the AGENTS.md / CLAUDE.md content)" },
       },
       required: ["playbook_id"],
     },
@@ -450,10 +452,11 @@ async function executeManagementTool(
         throw new Error("Permission denied: playbooks:write required");
       }
 
-      const { name, description, visibility } = args as {
+      const { name, description, visibility, instructions } = args as {
         name: string;
         description?: string;
         visibility?: 'public' | 'private' | 'unlisted';
+        instructions?: string;
       };
 
       if (!name) throw new Error("name is required");
@@ -469,6 +472,7 @@ async function executeManagementTool(
           description: description || null,
           visibility: visibility || 'private',
           config: {},
+          instructions: instructions || null,
         })
         .select()
         .single();
@@ -516,11 +520,12 @@ async function executeManagementTool(
         throw new Error("Permission denied: playbooks:write required");
       }
 
-      const { playbook_id, name, description, visibility } = args as {
+      const { playbook_id, name, description, visibility, instructions } = args as {
         playbook_id: string;
         name?: string;
         description?: string;
         visibility?: 'public' | 'private' | 'unlisted';
+        instructions?: string;
       };
 
       if (!playbook_id) throw new Error("playbook_id is required");
@@ -529,6 +534,7 @@ async function executeManagementTool(
       if (name !== undefined) updateData.name = name;
       if (description !== undefined) updateData.description = description;
       if (visibility !== undefined) updateData.visibility = visibility;
+      if (instructions !== undefined) updateData.instructions = instructions;
 
       const { data, error } = await supabase
         .from("playbooks")

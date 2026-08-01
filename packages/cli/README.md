@@ -22,13 +22,18 @@ insecure MCP URLs, cross-platform drift, and a 0-100 health score.
 1. The canonical `agentplaybook.json` manifest.
 2. The platform files missing from enabled deployment targets:
 
-   | Target | Skills | MCP servers |
-   |---|---|---|
-   | `claude` (Claude Code / Cowork) | `.claude/skills/<name>/SKILL.md` | `.mcp.json` |
-   | `cursor` | `.cursor/skills/<name>/SKILL.md` | `.cursor/mcp.json` |
-   | `codex` (ChatGPT / Codex CLI) | `.codex/skills/<name>/SKILL.md` | `.codex/config.toml` |
-   | `antigravity` (Google Antigravity) | `.agents/skills/<name>/SKILL.md` | — (global config only) |
-   | `hermes` (Nous Hermes Agent) | `~/.hermes/skills/<name>/SKILL.md` | — (global `config.yaml`) |
+   | Target | Skills | MCP servers | Instructions |
+   |---|---|---|---|
+   | `claude` (Claude Code / Cowork) | `.claude/skills/<name>/SKILL.md` | `.mcp.json` | `CLAUDE.md` importing `AGENTS.md` |
+   | `cursor` | `.cursor/skills/<name>/SKILL.md` | `.cursor/mcp.json` | — |
+   | `codex` (ChatGPT / Codex CLI) | `.codex/skills/<name>/SKILL.md` | `.codex/config.toml` | reads `AGENTS.md` |
+   | `antigravity` (Google Antigravity) | `.agents/skills/<name>/SKILL.md` | — (global config only) | — |
+   | `hermes` (Nous Hermes Agent) | `~/.hermes/skills/<name>/SKILL.md` | — (global `config.yaml`) | reads `AGENTS.md` |
+
+   Claude Code reads `CLAUDE.md` and not `AGENTS.md`, but it supports `@`
+   imports, so the `claude` target writes a `CLAUDE.md` containing `@AGENTS.md`
+   rather than a copy — one source of truth, nothing to drift. An existing
+   `CLAUDE.md` without that import is reported, never rewritten.
 
    Targets come from `spec.targets` in the manifest; detected platforms are
    enabled automatically, and `--target=<types>` enables one the project does
@@ -55,9 +60,15 @@ node ./bin/agentplaybooks.js push --apply           # local -> remote playbook
 
 - Keys are user API keys (`apb_...`) created in the dashboard, stored with
   `0600` permissions in `~/.agentplaybooks/credentials.json`.
-- Skills, MCP server definitions, and the manifest travel in both directions.
-- `pull` writes remote skills to `.agents/skills/` and remote MCP servers to
-  `.agents/mcp.json`, then links the project via `.agentplaybooks/remote.json`;
+- Instructions, skills, MCP server definitions, and the manifest travel in both
+  directions.
+- `push` uploads the project-root instruction file as the playbook's
+  instructions. `AGENTS.md` wins if several exist; root files that disagree are
+  a conflict, and nested instruction files stay local because they scope a
+  subdirectory rather than the project.
+- `pull` writes the playbook's instructions to `AGENTS.md`, remote skills to
+  `.agents/skills/`, and remote MCP servers to `.agents/mcp.json`, then links
+  the project via `.agentplaybooks/remote.json`;
   a subsequent `sync --apply` propagates both to the enabled platform targets.
   OpenAPI federation servers are hosted-only and are reported, not translated.
 - `push` uploads skills, MCP servers, and the manifest to the linked playbook

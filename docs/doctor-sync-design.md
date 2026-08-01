@@ -59,11 +59,34 @@ The CLI implements local manifest planning with atomic writes, platform file
 generation for the `claude`, `cursor`, `codex` (ChatGPT), `antigravity`, and
 `hermes` targets (skills and MCP server definitions where the platform has a
 project-scoped location; conflicting definitions are reported and skipped),
-and authenticated remote `pull`/`push` of skills, MCP servers, and the manifest
-against the management API using user API keys. Three-way conflict resolution
+and authenticated remote `pull`/`push` of project instructions, skills, MCP
+servers, and the manifest against the management API using user API keys. Three-way conflict resolution
 with recorded sync-state hashes will be added behind this same lifecycle.
 
-Two asymmetries are deliberate rather than temporary:
+Instructions are a first-class field on a playbook (`playbooks.instructions`),
+kept separate from the persona on purpose: the persona is who the agent is and
+travels between projects, while instructions are the always-on rules of one
+project. A runtime that needs a single system prompt composes them
+persona-first; storage never merges them. They are also not modelled as a skill,
+because skills are selected on demand by description whereas instructions are
+always in context.
+
+Instruction files are not interchangeable across tools, so the CLI resolves them
+by evidence rather than by assumption:
+
+- `AGENTS.md` is the cross-vendor standard and wins when several project-root
+  instruction files exist. Root files that disagree with each other are a
+  conflict; nested instruction files stay local because they scope a
+  subdirectory rather than the project.
+- Claude Code reads `CLAUDE.md` and not `AGENTS.md`, but it supports `@` imports.
+  The `claude` target therefore writes a `CLAUDE.md` containing `@AGENTS.md`
+  instead of a copy: one source of truth cannot drift from itself. An existing
+  `CLAUDE.md` without that import is reported, never rewritten.
+- `AGENTS.md` no longer implies the `codex` platform. Only a `.codex/` path does,
+  otherwise every project holding the vendor-neutral file would get a Codex
+  deployment target it never asked for.
+
+Two further asymmetries are deliberate rather than temporary:
 
 - **The hosted record is richer than any local file.** A hosted MCP server can
   carry federation settings (timeouts, auth, access, curated tool lists) that no

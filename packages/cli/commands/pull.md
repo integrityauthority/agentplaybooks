@@ -11,7 +11,8 @@ Pull a remote AgentPlaybooks playbook into the local project.
    `agentplaybooks login` (or set `AGENTPLAYBOOKS_API_KEY`) first — never ask
    them to paste the key into the chat.
 2. Run: `node "${CLAUDE_PLUGIN_ROOT}/bin/agentplaybooks.js" pull $ARGUMENTS --json`
-3. Summarize the plan: which skills would be created under `.agents/skills/`,
+3. Summarize the plan: whether the playbook's instructions would be written to
+   `AGENTS.md`, which skills would be created under `.agents/skills/`,
    which MCP servers would be added to `.agents/mcp.json`, and any conflicts
    with existing local files (these are skipped, never overwritten). OpenAPI
    federation servers are hosted-only and appear as conflicts by design.

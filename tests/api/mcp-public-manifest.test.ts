@@ -125,6 +125,48 @@ describe("GET /api/mcp/:guid — public manifest", () => {
     expect(capture.select).toBeDefined();
     expect(capture.select).not.toBe("*");
     expect(capture.select).toContain("persona_system_prompt");
+    // Project instructions are documentation, not a secret, and MCP clients
+    // need them — so the explicit projection has to publish them.
+    expect(capture.select).toContain("instructions");
+  });
+
+  it("leaves the persona prompt untouched when the playbook has no instructions", async () => {
+    vi.mocked(getSupabase).mockReturnValue(
+      stubClient({ ...publicPlaybook, instructions: null }) as unknown as ReturnType<typeof getSupabase>,
+    );
+    vi.mocked(getServiceSupabase).mockReturnValue(
+      stubClient([]) as unknown as ReturnType<typeof getServiceSupabase>,
+    );
+
+    const res = await GET(new Request("http://localhost/api/mcp/public-guid"));
+    const manifest = await res.json();
+
+    expect(manifest._playbook.persona.systemPrompt).toBe("You are helpful.");
+    // Omitted rather than sent as null, so the manifest of a playbook that
+    // never set instructions is unchanged.
+    expect(manifest._playbook).not.toHaveProperty("instructions");
+  });
+
+  it("publishes instructions and appends them after the persona prompt", async () => {
+    vi.mocked(getSupabase).mockReturnValue(
+      stubClient({
+        ...publicPlaybook,
+        instructions: "# Project rules\n\nAlways run the tests.",
+      }) as unknown as ReturnType<typeof getSupabase>,
+    );
+    vi.mocked(getServiceSupabase).mockReturnValue(
+      stubClient([]) as unknown as ReturnType<typeof getServiceSupabase>,
+    );
+
+    const res = await GET(new Request("http://localhost/api/mcp/public-guid"));
+    const manifest = await res.json();
+
+    // Persona first (who the agent is), then this project's operating rules.
+    expect(manifest._playbook.persona.systemPrompt).toBe(
+      "You are helpful.\n\n# Project rules\n\nAlways run the tests.",
+    );
+    // Still available as its own field, unmerged.
+    expect(manifest._playbook.instructions).toBe("# Project rules\n\nAlways run the tests.");
   });
 
   it("falls back to API-key auth when the playbook is not public", async () => {

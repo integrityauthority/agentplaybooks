@@ -149,7 +149,7 @@ export function printSyncPlan(plan) {
     }
   }
   for (const action of plan.fileActions) {
-    if (action.kind === "skill") {
+    if (action.kind === "skill" || action.kind === "instructions") {
       console.log(`  [${action.target}] ${action.action} ${action.path} (from ${action.from})`);
     } else {
       console.log(`  [${action.target}] ${action.action} ${action.path} (+ ${action.servers.join(", ")})`);
