@@ -27,8 +27,8 @@
     "sync"
   ],
   "bin": {
-    "apb": "./bin/agentplaybooks.js",
-    "agentplaybooks": "./bin/agentplaybooks.js"
+    "apb": "bin/agentplaybooks.js",
+    "agentplaybooks": "bin/agentplaybooks.js"
   },
   "files": [
     "bin",
