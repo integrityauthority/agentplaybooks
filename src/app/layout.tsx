@@ -16,8 +16,8 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? "https://agentplaybooks.ai"),
-  title: "AgentPlaybooks - AI Agent Rules, Skills & Memory Store",
-  description: "The universal skills store for AI agents. Store agent rules, chores, personas, skills.md, MCP servers. Works with ChatGPT, Claude, Gemini, Cursor. Platform-independent vault for AI robots and automation.",
+  title: "AgentPlaybooks - Your Agents. Your Skills. Any Platform.",
+  description: "A vendor-neutral home for AI agent skills, personas, MCP servers, project instructions, and memory. Keep your setup portable and in sync across platforms without vendor lock-in.",
   keywords: [
     "AI agent", "agent rules", "AI chores", "skills store", "agent memory",
     "Anthropic skills", "skills.md", "MCP protocol", "MCP server",
@@ -38,8 +38,8 @@ export const metadata: Metadata = {
   },
   manifest: "/manifest.json",
   openGraph: {
-    title: "AgentPlaybooks - AI Agent Rules, Skills & Memory Store",
-    description: "The universal skills store for AI agents. Store rules, chores, personas, MCP servers. Works with every major AI platform.",
+    title: "AgentPlaybooks - Your Agents. Your Skills. Any Platform.",
+    description: "Your vendor-neutral home for agent rules, skills, personas, MCP servers, and memory. Switch platforms without losing your setup.",
     type: "website",
     siteName: "AgentPlaybooks",
     images: [
@@ -54,7 +54,7 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
     title: "AgentPlaybooks - AI Agent Skills Store",
-    description: "Store AI agent rules, skills, and memories. Platform-independent vault for ChatGPT, Claude, Gemini.",
+    description: "Store AI agent rules, skills, MCP servers, and memory in a portable, vendor-neutral vault for ChatGPT, Claude, Gemini, Cursor, Codex, and more.",
     images: ["/twitter-image.png"],
   },
   robots: {

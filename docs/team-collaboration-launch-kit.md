@@ -2,11 +2,11 @@
 
 Launch only after the production migration, deployment, and invite smoke test have passed. Use the final blog URL:
 
-`https://apbks.com/blog/secure-team-playbook-collaboration`
+`https://agentplaybooks.ai/blog/secure-team-playbook-collaboration`
 
-Primary product URL: `https://apbks.com`
+Primary product URL: `https://agentplaybooks.ai`
 
-Documentation: `https://apbks.com/docs/team-collaboration`
+Documentation: `https://agentplaybooks.ai/docs/team-collaboration`
 
 Repository: `https://github.com/matebenyovszky/agentplaybooks`
 
@@ -51,11 +51,11 @@ Current platform references checked for this plan:
 
 ## X post (English, standard-length)
 
-AgentPlaybooks now supports secure team editing. Invite a teammate with a one-time link—no shared password or API key. Editors update persona, skills, MCP, canvas & memory; secrets, keys, visibility and deletion stay owner-only. https://apbks.com/blog/secure-team-playbook-collaboration
+AgentPlaybooks now supports secure team editing. Invite a teammate with a one-time link—no shared password or API key. Editors update persona, skills, MCP, canvas & memory; secrets, keys, visibility and deletion stay owner-only. https://agentplaybooks.ai/blog/secure-team-playbook-collaboration
 
 ## X post (Hungarian)
 
-Megérkezett a biztonságos közös playbook-szerkesztés. Egyszer használható linkkel hívhatsz szerkesztőt, API-kulcs átadása nélkül. A tartalmon együtt dolgoztok, a titkok, kulcsok, láthatóság és törlés tulajdonosi kézben marad. https://apbks.com/blog/secure-team-playbook-collaboration
+Megérkezett a biztonságos közös playbook-szerkesztés. Egyszer használható linkkel hívhatsz szerkesztőt, API-kulcs átadása nélkül. A tartalmon együtt dolgoztok, a titkok, kulcsok, láthatóság és törlés tulajdonosi kézben marad. https://agentplaybooks.ai/blog/secure-team-playbook-collaboration
 
 ## Optional X thread
 
@@ -63,7 +63,7 @@ Megérkezett a biztonságos közös playbook-szerkesztés. Egyszer használható
 
 **2/3** Editors can maintain persona, skills, MCP servers, attachments, canvas and memory. They cannot access secrets or API keys, change visibility, invite others, transfer ownership or delete the playbook.
 
-**3/3** Invitations are single-use, expire after 72 hours and are stored only as SHA-256 digests. The accepting account gets independently revocable access. Details: https://apbks.com/blog/secure-team-playbook-collaboration
+**3/3** Invitations are single-use, expire after 72 hours and are stored only as SHA-256 digests. The accepting account gets independently revocable access. Details: https://agentplaybooks.ai/blog/secure-team-playbook-collaboration
 
 ## LinkedIn post (English)
 
@@ -93,7 +93,7 @@ The result is simple: people get account-bound, revocable access; agents keep us
 
 The feature is live and the project is open source. I would especially value feedback from teams maintaining agent instructions and MCP setups together.
 
-https://apbks.com/blog/secure-team-playbook-collaboration
+https://agentplaybooks.ai/blog/secure-team-playbook-collaboration
 
 #AIagents #MCP #OpenSource #Security #Collaboration
 
@@ -113,7 +113,7 @@ Az eredmény: az emberek fiókhoz kötött, önállóan visszavonható hozzáfé
 
 Már éles, a projekt pedig nyílt forráskódú. Különösen azok visszajelzésére vagyok kíváncsi, akik csapatban tartanak karban agent-utasításokat és MCP-beállításokat.
 
-https://apbks.com/blog/secure-team-playbook-collaboration
+https://agentplaybooks.ai/blog/secure-team-playbook-collaboration
 
 #AIagents #MCP #OpenSource #Security #Collaboration
 
@@ -133,7 +133,7 @@ Editors can change persona, skills, MCP servers, attachments, canvas and memory.
 
 The project is open source: https://github.com/matebenyovszky/agentplaybooks
 
-Feature walkthrough: https://apbks.com/blog/secure-team-playbook-collaboration
+Feature walkthrough: https://agentplaybooks.ai/blog/secure-team-playbook-collaboration
 
 I would value feedback on the permission boundary: is this simple owner/editor split enough for small teams, or which missing role would become necessary first?
 
@@ -153,9 +153,9 @@ Stack: Next.js, Supabase/Postgres with RLS, and Cloudflare Workers via OpenNext.
 
 Repository: https://github.com/matebenyovszky/agentplaybooks
 
-Self-hosting guide: https://apbks.com/docs/self-hosting
+Self-hosting guide: https://agentplaybooks.ai/docs/self-hosting
 
-Collaboration security model: https://apbks.com/docs/team-collaboration
+Collaboration security model: https://agentplaybooks.ai/docs/team-collaboration
 
 I would appreciate feedback on the deployment docs and whether the owner/editor boundary fits self-hosted team use.
 

@@ -1,7 +1,7 @@
 {
   "common": {
     "appName": "AgentPlaybooks",
-    "tagline": "Memoria y kit de herramientas independiente de plataforma para agentes de IA",
+    "tagline": "Espacio independiente del proveedor para tus agentes de IA",
     "getStarted": "Comenzar",
     "signIn": "Iniciar Sesión",
     "signUp": "Registrarse",
@@ -17,8 +17,8 @@
   },
   "landing": {
     "hero": {
-      "title": "La Memoria Universal de tu IA",
-      "subtitle": "Dale a tus agentes de IA, GPTs y robots una bóveda independiente de plataforma. Almacena habilidades, personas y servidores MCP - cambia entre plataformas de IA sin perder nada.",
+      "title": "Tus agentes. Tus habilidades. Cualquier plataforma.",
+      "subtitle": "Guarda personas, habilidades, servidores MCP, instrucciones de proyecto y memoria en un espacio independiente del proveedor. Cambia de plataforma o usa varias a la vez sin perder tu configuración.",
       "cta": "Empieza Gratis",
       "tryDemo": "Probar Demo"
     },

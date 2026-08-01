@@ -1,7 +1,7 @@
 {
   "common": {
     "appName": "AgentPlaybooks",
-    "tagline": "Plattformunabhängiger Speicher und Toolkit für KI-Agenten",
+    "tagline": "Vendor-neutraler Speicher für Ihre KI-Agenten",
     "getStarted": "Loslegen",
     "signIn": "Anmelden",
     "signUp": "Registrieren",
@@ -17,8 +17,8 @@
   },
   "landing": {
     "hero": {
-      "title": "Das Universelle Gedächtnis Ihrer KI",
-      "subtitle": "Geben Sie Ihren KI-Agenten, GPTs und Robotern einen plattformunabhängigen Tresor. Speichern Sie Skills, Personas und MCP-Server - wechseln Sie zwischen KI-Plattformen, ohne etwas zu verlieren.",
+      "title": "Ihre Agenten. Ihre Skills. Jede Plattform.",
+      "subtitle": "Bewahren Sie Personas, Skills, MCP-Server, Projektanweisungen und Speicher an einem vendor-neutralen Ort auf. Wechseln Sie Plattformen oder nutzen Sie mehrere gleichzeitig, ohne Ihre Konfiguration zu verlieren.",
       "cta": "Kostenlos Starten",
       "tryDemo": "Demo Testen"
     },
