@@ -67,17 +67,42 @@ function transportFor(server) {
   return "unknown";
 }
 
-function parseTomlServers(content) {
+export function parseTomlServers(content) {
   const servers = [];
-  const sectionPattern = /^\[mcp_servers\.([A-Za-z0-9_-]+)\]\s*$/gm;
+  // Matches both `[mcp_servers.name]` and its `.env` sub-table.
+  const sectionPattern = /^\[mcp_servers\.([A-Za-z0-9_-]+)(\.env)?\]\s*$/gm;
   const matches = [...content.matchAll(sectionPattern)];
+  const byName = new Map();
   for (const [index, match] of matches.entries()) {
     const start = match.index + match[0].length;
     const end = matches[index + 1]?.index ?? content.length;
     const block = content.slice(start, end);
+    const definition = byName.get(match[1]) ?? {};
+    byName.set(match[1], definition);
+
+    if (match[2]) {
+      const env = {};
+      for (const line of block.matchAll(/^([A-Za-z0-9_]+)\s*=\s*["']([^"']*)["']\s*$/gm)) {
+        env[line[1]] = line[2];
+      }
+      if (Object.keys(env).length) definition.env = env;
+      continue;
+    }
     const url = block.match(/^url\s*=\s*["']([^"']+)["']/m)?.[1];
     const command = block.match(/^command\s*=\s*["']([^"']+)["']/m)?.[1];
-    servers.push({ name: match[1], definition: { url, command }, transport: url ? (url.includes("/sse") ? "sse" : "http") : command ? "stdio" : "unknown" });
+    const argsSource = block.match(/^args\s*=\s*\[([^\]]*)\]/m)?.[1];
+    if (url !== undefined) definition.url = url;
+    if (command !== undefined) definition.command = command;
+    if (argsSource !== undefined) {
+      definition.args = [...argsSource.matchAll(/["']([^"']*)["']/g)].map((item) => item[1]);
+    }
+  }
+  for (const [name, definition] of byName) {
+    servers.push({
+      name,
+      definition,
+      transport: definition.url ? (definition.url.includes("/sse") ? "sse" : "http") : definition.command ? "stdio" : "unknown",
+    });
   }
   return servers;
 }

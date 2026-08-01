@@ -56,11 +56,12 @@ Sync is deliberately not blind two-way copying.
 6. **Verify** generated files and record hashes for the next three-way diff.
 
 The CLI implements local manifest planning with atomic writes, platform file
-generation for the `claude` and `cursor` targets (skills and MCP server
-definitions; conflicting definitions are reported and skipped), and
-authenticated remote `pull`/`push` against the management API using user API
-keys. Three-way conflict resolution with recorded sync-state hashes will be
-added behind this same lifecycle.
+generation for the `claude`, `cursor`, `codex` (ChatGPT), `antigravity`, and
+`hermes` targets (skills and MCP server definitions where the platform has a
+project-scoped location; conflicting definitions are reported and skipped),
+and authenticated remote `pull`/`push` against the management API using user
+API keys. Three-way conflict resolution with recorded sync-state hashes will
+be added behind this same lifecycle.
 
 Safety rules:
 
@@ -118,7 +119,8 @@ robots, terminals, and spoken links can use the short domain.
 
 1. Local doctor, JSON output, strict CI mode. (done)
 2. Local manifest plan/apply with backups. (done)
-3. Platform adapters (claude, cursor: done) and three-way sync state.
+3. Platform adapters (claude, cursor, codex, antigravity, hermes: done) and
+   three-way sync state.
 4. Authenticated remote push/pull (done) and team collaboration.
 5. Claude Code plugin: skill + commands shipped inside `packages/cli`,
    marketplace manifest at the repository root. (done)

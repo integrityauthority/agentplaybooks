@@ -52,6 +52,7 @@ export function platformFor(relativePath) {
   if (normalized.includes("/.cursor/") || base === ".cursorrules") return "cursor";
   if (normalized.includes("/.github/") || base === "copilot-instructions.md") return "copilot";
   if (normalized.includes("/.gemini/") || base === "gemini.md") return "gemini";
+  if (normalized.includes("/.hermes/")) return "hermes";
   if (normalized.includes("/.agents/")) return "portable";
   return "generic";
 }
@@ -143,6 +144,7 @@ export async function discoverGlobal() {
     { directory: ".claude", platform: "claude" },
     { directory: ".cursor", platform: "cursor" },
     { directory: ".gemini", platform: "gemini" },
+    { directory: ".hermes", platform: "hermes" },
     { directory: ".agents", platform: "portable" },
   ];
   const combined = { root: home, instructions: [], skills: [], mcpConfigs: [] };

@@ -88,6 +88,83 @@ test("sync reports drift as a conflict and never overwrites", async () => {
   assert.equal(await readFile(path.join(root, ".claude", "skills", "release", "SKILL.md"), "utf8"), SKILL);
 });
 
+async function manifestWithTargets(root, types) {
+  const plan = await planSync(root);
+  const manifest = plan.manifest;
+  for (const type of types) {
+    manifest.spec.targets.push({ id: type, type, enabled: true, config: {} });
+  }
+  await put(root, "agentplaybook.json", `${JSON.stringify(manifest, null, 2)}\n`);
+}
+
+test("codex target gets skills and a TOML MCP config, both directions", async () => {
+  const root = await fixture();
+  await put(root, ".claude/skills/release/SKILL.md", SKILL);
+  await put(root, ".mcp.json", JSON.stringify({
+    mcpServers: { deploy: { command: "npx", args: ["deploy-mcp"], env: { API_KEY: "${DEPLOY_API_KEY}" } } },
+  }));
+  await put(root, ".codex/config.toml", '[mcp_servers.search]\nurl = "https://mcp.example.com/http"\n');
+  await manifestWithTargets(root, ["codex"]);
+
+  const plan = await planSync(root, { homedir: root });
+  const skillAction = plan.fileActions.find((action) => action.kind === "skill" && action.target === "codex");
+  assert.equal(skillAction.path, ".codex/skills/release/SKILL.md");
+
+  const tomlAction = plan.fileActions.find((action) => action.path === ".codex/config.toml");
+  assert.equal(tomlAction.action, "merge");
+  assert.match(tomlAction.content, /\[mcp_servers\.search\]/);
+  assert.match(tomlAction.content, /\[mcp_servers\.deploy\]\ncommand = "npx"\nargs = \["deploy-mcp"\]/);
+  assert.match(tomlAction.content, /\[mcp_servers\.deploy\.env\]\nAPI_KEY = "\$\{DEPLOY_API_KEY\}"/);
+
+  // The codex TOML server is copied into the claude JSON config too.
+  const jsonAction = plan.fileActions.find((action) => action.path === ".mcp.json");
+  assert.deepEqual(jsonAction.servers, ["search"]);
+
+  await applySync(plan);
+  const followUp = await planSync(root, { homedir: root });
+  assert.equal(followUp.fileActions.length, 0);
+  assert.equal(followUp.conflicts.length, 0);
+});
+
+test("antigravity target maps to the portable .agents store", async () => {
+  const root = await fixture();
+  await put(root, ".claude/skills/release/SKILL.md", SKILL);
+  await manifestWithTargets(root, ["antigravity"]);
+
+  const plan = await planSync(root, { homedir: root });
+  const skillAction = plan.fileActions.find((action) => action.target === "antigravity");
+  assert.equal(skillAction.path, ".agents/skills/release/SKILL.md");
+
+  await applySync(plan);
+  // Portable skills count as present for antigravity: no repeat action.
+  const followUp = await planSync(root, { homedir: root });
+  assert.equal(followUp.fileActions.filter((action) => action.target === "antigravity").length, 0);
+});
+
+test("hermes target writes to the home-scoped skill store and respects existing files", async () => {
+  const root = await fixture();
+  const home = await fixture();
+  await put(root, ".claude/skills/release/SKILL.md", SKILL);
+  await manifestWithTargets(root, ["hermes"]);
+
+  const plan = await planSync(root, { homedir: home });
+  const skillAction = plan.fileActions.find((action) => action.target === "hermes");
+  assert.equal(skillAction.path, "~/.hermes/skills/release/SKILL.md");
+
+  await applySync(plan);
+  assert.equal(await readFile(path.join(home, ".hermes", "skills", "release", "SKILL.md"), "utf8"), SKILL);
+
+  // Identical home file: converged. Different home file: conflict, no write.
+  const converged = await planSync(root, { homedir: home });
+  assert.equal(converged.fileActions.filter((action) => action.target === "hermes").length, 0);
+
+  await put(home, ".hermes/skills/release/SKILL.md", "different\n");
+  const conflicted = await planSync(root, { homedir: home });
+  assert.equal(conflicted.fileActions.filter((action) => action.target === "hermes").length, 0);
+  assert.ok(conflicted.conflicts.some((item) => item.target === "hermes" && item.kind === "skill"));
+  assert.equal(await readFile(path.join(home, ".hermes", "skills", "release", "SKILL.md"), "utf8"), "different\n");
+});
+
 test("conflicting MCP definitions across platforms are skipped with a conflict", async () => {
   const root = await fixture();
   await put(root, ".mcp.json", JSON.stringify({ mcpServers: { deploy: { command: "npx", args: ["deploy-mcp"] } } }));

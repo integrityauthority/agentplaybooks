@@ -87,8 +87,10 @@ npx wrangler deploy
 `agentplaybooks doctor <project>` audits local agent configuration
 (instructions, Agent Skills, MCP servers, likely hard-coded secrets, drift)
 and `agentplaybooks sync <project>` creates the canonical
-`agentplaybook.json` plus the platform files missing from enabled targets
-(`.claude/skills` + `.mcp.json`, `.cursor/skills` + `.cursor/mcp.json`).
+`agentplaybook.json` plus the platform files missing from enabled targets:
+Claude Code (`.claude/skills` + `.mcp.json`), Cursor (`.cursor/skills` +
+`.cursor/mcp.json`), ChatGPT/Codex (`.codex/skills` + `.codex/config.toml`),
+Google Antigravity (`.agents/skills`), and Hermes Agent (`~/.hermes/skills`).
 `login` / `playbooks` / `pull` / `push` synchronize skills and the manifest
 with a hosted playbook using a user API key. All mutating commands are
 plan-only until `--apply`. See [packages/cli/README.md](packages/cli/README.md).

@@ -26,7 +26,7 @@ async function atomicWrite(manifestPath, manifest) {
   await rename(tempPath, manifestPath);
 }
 
-export async function planSync(target) {
+export async function planSync(target, options = {}) {
   const report = await runDoctor(target);
   const manifestPath = path.join(report.inventory.root, MANIFEST_NAME);
   const existing = await readExisting(manifestPath);
@@ -35,7 +35,7 @@ export async function planSync(target) {
     ? mergeExisting(discovered, existing)
     : discovered;
   const manifestChanged = !existing || JSON.stringify(comparableManifest(existing)) !== JSON.stringify(comparableManifest(manifest));
-  const adapters = planAdapters(report, manifest.spec.targets);
+  const adapters = await planAdapters(report, manifest.spec.targets, options);
   return {
     report,
     manifest,
@@ -85,7 +85,7 @@ export async function applySync(plan) {
   if (plan.manifestChanged) {
     await atomicWrite(plan.manifestPath, plan.manifest);
   }
-  const { written, backups } = await applyAdapters(path.dirname(plan.manifestPath), plan.fileActions, backupDirectory);
+  const { written, backups } = await applyAdapters(plan.fileActions, backupDirectory);
   return { applied: true, backupPath, written, backups };
 }
 

@@ -1,6 +1,6 @@
 ---
 name: agentplaybooks
-description: Audit, synchronize, and share portable agent configuration (instructions, Agent Skills, MCP servers) with the AgentPlaybooks CLI. Use when the user wants to check agent-config health or drift, copy skills/MCP config between Claude Code and Cursor, create an agentplaybook.json manifest, or pull/push a playbook from agentplaybooks.ai.
+description: Audit, synchronize, and share portable agent configuration (instructions, Agent Skills, MCP servers) with the AgentPlaybooks CLI. Use when the user wants to check agent-config health or drift, copy skills/MCP config between Claude Code, Cursor, Codex/ChatGPT, Google Antigravity, or Hermes Agent, create an agentplaybook.json manifest, or pull/push a playbook from agentplaybooks.ai.
 ---
 
 # AgentPlaybooks
@@ -26,7 +26,7 @@ Substitute your variant for `apb` in the commands below.
 | Command | What it does | Writes? |
 |---|---|---|
 | `apb doctor [path] [--json] [--strict]` | Health report: inventory, spec violations, likely hard-coded secrets, insecure MCP URLs, cross-platform drift, 0-100 score | Never |
-| `apb sync [path]` | Plan the canonical `agentplaybook.json` plus platform files missing from enabled targets (claude, cursor) | Plan only |
+| `apb sync [path]` | Plan the canonical `agentplaybook.json` plus platform files missing from enabled targets (claude, cursor, codex, antigravity, hermes) | Plan only |
 | `apb sync [path] --apply` | Write the manifest and missing platform files, with backups under `.agentplaybooks/backups/` | Yes |
 | `apb login [--url=<base>]` | Store a user API key (`apb_...`) for a remote; reads `AGENTPLAYBOOKS_API_KEY` first | `~/.agentplaybooks/credentials.json` |
 | `apb playbooks [--json]` | List remote playbooks the key can access | Never |
@@ -37,11 +37,14 @@ Substitute your variant for `apb` in the commands below.
 
 - **"Is my agent config healthy?"** → `apb doctor . --json`, then explain the
   findings by severity with their sources and line numbers.
-- **"Make my Claude skills available in Cursor"** → ensure the manifest has an
-  enabled `cursor` target (run `apb sync` once, or add
-  `{"id": "cursor", "type": "cursor", "enabled": true, "config": {}}` to
-  `spec.targets` in `agentplaybook.json`), show the user the plan from
-  `apb sync`, then run `apb sync --apply`.
+- **"Make my Claude skills available in Cursor / ChatGPT (Codex) / Antigravity / Hermes"**
+  → ensure the manifest has the matching enabled target (run `apb sync` once,
+  or add e.g. `{"id": "codex", "type": "codex", "enabled": true, "config": {}}`
+  to `spec.targets` in `agentplaybook.json`), show the user the plan from
+  `apb sync`, then run `apb sync --apply`. Target file mapping: claude →
+  `.claude/skills` + `.mcp.json`; cursor → `.cursor/skills` + `.cursor/mcp.json`;
+  codex → `.codex/skills` + `.codex/config.toml`; antigravity → `.agents/skills`
+  (portable store); hermes → `~/.hermes/skills` (home-scoped).
 - **"Share this project's skills with my team"** → `apb login`, then
   `apb push` (review the plan), then `apb push --apply`. Give the team the
   playbook GUID; they run `apb pull <guid> --apply` in their project.

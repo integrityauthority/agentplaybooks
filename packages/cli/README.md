@@ -23,13 +23,21 @@ insecure MCP URLs, cross-platform drift, and a 0-100 health score.
 
    | Target | Skills | MCP servers |
    |---|---|---|
-   | `claude` | `.claude/skills/<name>/SKILL.md` | `.mcp.json` |
+   | `claude` (Claude Code / Cowork) | `.claude/skills/<name>/SKILL.md` | `.mcp.json` |
    | `cursor` | `.cursor/skills/<name>/SKILL.md` | `.cursor/mcp.json` |
+   | `codex` (ChatGPT / Codex CLI) | `.codex/skills/<name>/SKILL.md` | `.codex/config.toml` |
+   | `antigravity` (Google Antigravity) | `.agents/skills/<name>/SKILL.md` | — (global config only) |
+   | `hermes` (Nous Hermes Agent) | `~/.hermes/skills/<name>/SKILL.md` | — (global `config.yaml`) |
 
    Targets come from `spec.targets` in the manifest; detected platforms are
-   enabled automatically, others can be added by hand. Same-named definitions
-   with different content are reported as conflicts and skipped — never
-   overwritten. Replaced files are backed up under `.agentplaybooks/backups/`.
+   enabled automatically, `antigravity` and `hermes` are opt-in (add
+   `{"id": "hermes", "type": "hermes", "enabled": true, "config": {}}`).
+   Antigravity reads project skills from the portable `.agents/skills/` store;
+   Hermes has no project-scoped store, so its adapter writes to the home
+   directory and also picks instructions up from `AGENTS.md` natively.
+   Same-named definitions with different content are reported as conflicts
+   and skipped — never overwritten. Replaced files are backed up under
+   `.agentplaybooks/backups/`.
 
 ## Remote sync
 
