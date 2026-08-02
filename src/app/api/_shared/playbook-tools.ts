@@ -190,8 +190,13 @@ export const PLAYBOOK_TOOLS: McpTool[] = [
   },
   {
     name: "list_canvas",
-    description: "List all canvas documents in this playbook. Canvas documents are collaborative markdown files that multiple agents can edit in parallel.",
-    inputSchema: { type: "object", properties: {} },
+    description: "List canvas documents in a workflow run. Canvas documents are collaborative markdown files that multiple agents can edit in parallel.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        run_id: { type: "string", description: "Workflow run UUID. Omit to list documents across all runs." },
+      },
+    },
   },
   {
     name: "read_canvas",
@@ -199,10 +204,11 @@ export const PLAYBOOK_TOOLS: McpTool[] = [
     inputSchema: {
       type: "object",
       properties: {
+        run_id: { type: "string", description: "Workflow run UUID" },
         slug: { type: "string", description: "Document slug" },
         section_id: { type: "string", description: "Optional: read only this section" },
       },
-      required: ["slug"],
+      required: ["run_id", "slug"],
     },
   },
   {
@@ -211,12 +217,13 @@ export const PLAYBOOK_TOOLS: McpTool[] = [
     inputSchema: {
       type: "object",
       properties: {
+        run_id: { type: "string", description: "Workflow run UUID" },
         slug: { type: "string", description: "URL-friendly document identifier" },
         name: { type: "string", description: "Document title" },
         content: { type: "string", description: "Full markdown content" },
         metadata: { type: "object", description: "Custom document metadata" },
       },
-      required: ["slug", "name", "content"],
+      required: ["run_id", "slug", "name", "content"],
     },
   },
   {
@@ -225,12 +232,13 @@ export const PLAYBOOK_TOOLS: McpTool[] = [
     inputSchema: {
       type: "object",
       properties: {
+        run_id: { type: "string", description: "Workflow run UUID" },
         slug: { type: "string", description: "Document slug" },
         section_id: { type: "string", description: "Section ID from get_canvas_toc" },
         content: { type: "string", description: "New section content (markdown)" },
         heading: { type: "string", description: "Optional: new heading text" },
       },
-      required: ["slug", "section_id", "content"],
+      required: ["run_id", "slug", "section_id", "content"],
     },
   },
   {
@@ -239,9 +247,10 @@ export const PLAYBOOK_TOOLS: McpTool[] = [
     inputSchema: {
       type: "object",
       properties: {
+        run_id: { type: "string", description: "Workflow run UUID" },
         slug: { type: "string", description: "Document slug" },
       },
-      required: ["slug"],
+      required: ["run_id", "slug"],
     },
   },
   {
@@ -250,11 +259,12 @@ export const PLAYBOOK_TOOLS: McpTool[] = [
     inputSchema: {
       type: "object",
       properties: {
+        run_id: { type: "string", description: "Workflow run UUID" },
         slug: { type: "string", description: "Document slug" },
         section_id: { type: "string", description: "Section ID to lock" },
         locked_by: { type: "string", description: "Agent identifier" },
       },
-      required: ["slug", "section_id", "locked_by"],
+      required: ["run_id", "slug", "section_id", "locked_by"],
     },
   },
   {
@@ -263,10 +273,11 @@ export const PLAYBOOK_TOOLS: McpTool[] = [
     inputSchema: {
       type: "object",
       properties: {
+        run_id: { type: "string", description: "Workflow run UUID" },
         slug: { type: "string", description: "Document slug" },
         section_id: { type: "string", description: "Section ID to unlock" },
       },
-      required: ["slug", "section_id"],
+      required: ["run_id", "slug", "section_id"],
     },
   },
   {
@@ -338,11 +349,122 @@ export const PLAYBOOK_TOOLS: McpTool[] = [
     inputSchema: {
       type: "object",
       properties: {
+        name: { type: "string", description: "New playbook name" },
+        description: { type: "string", description: "New playbook description" },
+        visibility: { type: "string", enum: ["public", "private", "unlisted"], description: "New visibility" },
+        tags: { type: "array", items: { type: "string" }, description: "Replacement discovery tags" },
+        config: { type: "object", description: "Replacement playbook configuration" },
         persona_name: { type: "string", description: "New persona name" },
         persona_system_prompt: { type: "string", description: "New core system instructions" },
         persona_metadata: { type: "object", description: "New metadata JSON" },
         instructions: { type: "string", description: "New always-on project instructions (the AGENTS.md / CLAUDE.md content). Kept separate from the persona: the persona is who the agent is, these are the rules of this project." },
       },
+    },
+  },
+  // ===== Connected MCP Servers =====
+  {
+    name: "list_mcp_servers",
+    description: "List the MCP and OpenAPI servers connected to this playbook, including transport metadata and discovered capability counts.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "call_connected_tool",
+    description: "Call a tool on one of this playbook's connected MCP servers. This stable wrapper lets the user control plane apply newly created playbooks without dynamically changing its own tool list.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        server_id: { type: "string", description: "Connected server UUID or name" },
+        tool_name: { type: "string", description: "Tool name exposed by the connected server" },
+        arguments: { type: "object", description: "Arguments passed to the connected tool" },
+      },
+      required: ["server_id", "tool_name"],
+    },
+  },
+  {
+    name: "create_mcp_server",
+    description: "Connect an MCP or OpenAPI server to this playbook. Requires playbooks:write or full permission.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Display name of the connected server" },
+        description: { type: "string", description: "What this server provides" },
+        tools: { type: "array", items: { type: "object" }, description: "Known tool definitions, if already discovered" },
+        resources: { type: "array", items: { type: "object" }, description: "Known resource definitions, if already discovered" },
+        transport_type: { type: "string", enum: ["stdio", "http", "sse", "openapi"], description: "Connection type (default: http)" },
+        transport_config: { type: "object", description: "Transport-specific configuration. Do not put plaintext secrets here." },
+      },
+      required: ["name"],
+    },
+  },
+  {
+    name: "update_mcp_server",
+    description: "Update a connected MCP or OpenAPI server. Requires playbooks:write or full permission.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        server_id: { type: "string", description: "Connected server UUID" },
+        name: { type: "string", description: "New display name" },
+        description: { type: "string", description: "New description" },
+        tools: { type: "array", items: { type: "object" }, description: "Updated tool definitions" },
+        resources: { type: "array", items: { type: "object" }, description: "Updated resource definitions" },
+        transport_type: { type: "string", enum: ["stdio", "http", "sse", "openapi"], description: "Connection type" },
+        transport_config: { type: "object", description: "Updated transport-specific configuration" },
+      },
+      required: ["server_id"],
+    },
+  },
+  {
+    name: "delete_mcp_server",
+    description: "Disconnect an MCP or OpenAPI server from this playbook. Requires playbooks:write or full permission.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        server_id: { type: "string", description: "Connected server UUID" },
+      },
+      required: ["server_id"],
+    },
+  },
+  // ===== Workflow Runs =====
+  {
+    name: "list_runs",
+    description: "List workflow runs for this playbook. Runs isolate canvas artifacts and execution context.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "create_run",
+    description: "Create a workflow run so this playbook can be applied immediately with isolated context and canvas artifacts.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Human-readable run name" },
+        context: { type: "object", description: "Initial execution context" },
+      },
+      required: ["name"],
+    },
+  },
+  {
+    name: "update_run",
+    description: "Update a workflow run's name, status, or context.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        run_id: { type: "string", description: "Workflow run UUID" },
+        name: { type: "string", description: "New run name" },
+        status: { type: "string", enum: ["active", "completed", "archived"], description: "New run status" },
+        context: { type: "object", description: "Replacement execution context" },
+      },
+      required: ["run_id"],
+    },
+  },
+  {
+    name: "delete_run",
+    description: "Delete a workflow run and its isolated canvas artifacts.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        run_id: { type: "string", description: "Workflow run UUID" },
+      },
+      required: ["run_id"],
     },
   },
   // ===== Secrets Tools =====
@@ -415,3 +537,47 @@ export const PLAYBOOK_TOOLS: McpTool[] = [
     },
   },
 ];
+
+const PLAYBOOK_ID_PROPERTY = {
+  type: "string",
+  description: "UUID or GUID of the target playbook",
+};
+
+/**
+ * The playbook-scoped endpoint binds the playbook in its URL. The user-level
+ * control plane exposes the exact same operations, but lifts the target into
+ * an explicit argument so an agent can create a playbook and use it at once.
+ */
+export function projectPlaybookToolsForUser(tools: McpTool[] = PLAYBOOK_TOOLS): McpTool[] {
+  return tools.map((tool) => {
+    const schema = tool.inputSchema || { type: "object", properties: {} };
+    const properties = (
+      typeof schema.properties === "object" && schema.properties !== null
+        ? schema.properties
+        : {}
+    ) as Record<string, unknown>;
+    const required = Array.isArray(schema.required)
+      ? schema.required.filter((name): name is string => typeof name === "string")
+      : [];
+
+    return {
+      ...tool,
+      description: `${tool.description || tool.name} Target a playbook with playbook_id.`,
+      inputSchema: {
+        ...schema,
+        type: "object",
+        properties: {
+          playbook_id: PLAYBOOK_ID_PROPERTY,
+          ...properties,
+        },
+        required: ["playbook_id", ...required.filter((name) => name !== "playbook_id")],
+      },
+    };
+  });
+}
+
+const PLAYBOOK_TOOL_NAMES = new Set(PLAYBOOK_TOOLS.map((tool) => tool.name));
+
+export function isPlaybookTool(name: string): boolean {
+  return PLAYBOOK_TOOL_NAMES.has(name);
+}

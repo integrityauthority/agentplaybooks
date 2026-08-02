@@ -1,6 +1,7 @@
 import type { Playbook, Skill, MCPServer, Persona } from "@/lib/supabase/types";
 import { PLAYBOOK_TOOLS } from "@/app/api/_shared/playbook-tools";
 import { composePlaybookSystemPrompt } from "@/lib/playbook-prompt";
+import { operationPathsFromTools } from "@/app/api/_shared/operation-openapi";
 
 export type PlaybookWithExports = Playbook & {
     current_user_role?: "owner" | "editor" | "viewer";
@@ -205,6 +206,11 @@ export function formatAsOpenAPI(playbook: PlaybookWithExports) {
                     },
                 },
             },
+            ...operationPathsFromTools(
+                PLAYBOOK_TOOLS,
+                (tool) => `/playbooks/${playbook.guid}/operations/${tool.name}`,
+                "apiKey",
+            ),
         },
         components: {
             schemas: {

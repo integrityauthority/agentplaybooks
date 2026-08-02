@@ -4,10 +4,11 @@ This guide explains how to programmatically manage AgentPlaybooks using the Mana
 
 ## Overview
 
-AgentPlaybooks provides two ways for AI agents to manage playbooks:
+AgentPlaybooks provides protocol projections over one shared operation model:
 
-1. **REST API** - Standard HTTP endpoints with OpenAPI specification
-2. **MCP Server** - Model Context Protocol server for Claude, Cursor, and other MCP clients
+1. **REST/OpenAPI** - Standard resource endpoints plus operation endpoints
+2. **User MCP control plane** - Account lifecycle plus every playbook operation
+3. **Direct playbook MCP** - The same playbook operations with identity in the URL
 
 Both methods require a **User API Key** for authentication.
 
@@ -20,6 +21,8 @@ Unlike Playbook API Keys (which only work for a single playbook), **User API Key
 - Create new playbooks (with embedded persona)
 - Manage existing playbooks
 - Add/update/delete skills and memory
+- Manage workflow runs, canvas documents, connected MCP/OpenAPI servers, and secrets (when explicitly permitted)
+- Apply a newly created playbook immediately through the same control-plane connection
 - List owned and shared playbooks, including `current_user_role`
 
 For a shared playbook, the User API Key inherits the account's editor boundaries: it may change content but cannot change visibility, manage collaborators or playbook API keys, access secrets, or delete the playbook. Human invitation endpoints themselves require an interactive JWT session and are not exposed through this API.
@@ -34,9 +37,13 @@ For a shared playbook, the User API Key inherits the account's editor boundaries
 4. Select permissions:
    - `playbooks:read` - List and read playbooks
    - `playbooks:write` - Create, update, delete playbooks (incl. persona)
-   - `skills:write` - Manage skills
+   - `personas:read` / `personas:write` - Read or update persona data
+   - `skills:read` / `skills:write` - Read or manage skills
    - `memory:read` - Read memory
    - `memory:write` - Write/delete memory
+   - `canvas:read` / `canvas:write` - Read or manage workflow runs and canvas
+   - `tools:call` - Call protected tools on connected MCP servers
+   - `secrets:read` / `secrets:write` - Use or manage encrypted secrets (opt-in)
    - `full` - All permissions
 4. Copy the key immediately (it won't be shown again!)
 
@@ -100,6 +107,37 @@ This can be used with:
 - ChatGPT Custom Actions
 - OpenAPI-compatible tools
 - API documentation generators
+
+The specification also contains the generalized operation projection:
+
+```http
+POST /api/control/:operation
+Authorization: Bearer apb_live_xxx
+Content-Type: application/json
+```
+
+Playbook operations require `playbook_id` in the JSON body. For example:
+
+```http
+POST /api/control/create_run
+
+{
+  "playbook_id": "550e8400-e29b-41d4-a716-446655440000",
+  "name": "Customer discovery",
+  "context": { "customer": "Acme" }
+}
+```
+
+The equivalent direct route binds the identity instead:
+
+```http
+POST /api/playbooks/PLAYBOOK_GUID/operations/create_run
+
+{
+  "name": "Customer discovery",
+  "context": { "customer": "Acme" }
+}
+```
 
 ### Endpoints
 
@@ -241,6 +279,11 @@ Add to your MCP settings:
 
 ### Available Tools
 
+The control plane includes account lifecycle tools and the complete canonical
+playbook tool catalog. Every playbook-scoped tool below requires
+`playbook_id`; the direct `/api/mcp/:guid` endpoint exposes the same schema
+without that argument.
+
 | Tool | Description |
 |------|-------------|
 | `list_playbooks` | List all playbooks owned by the user |
@@ -257,6 +300,11 @@ Add to your MCP settings:
 | `search_memory` | Search memories by text and/or tags |
 | `write_memory` | Write a memory entry with optional tags and description |
 | `delete_memory` | Delete a memory entry |
+| `create_run`, `list_runs`, `update_run`, `delete_run` | Manage isolated workflow runs |
+| `list_canvas`, `read_canvas`, `write_canvas`, `patch_canvas_section` | Manage run-scoped canvas artifacts |
+| `list_mcp_servers`, `create_mcp_server`, `update_mcp_server`, `delete_mcp_server` | Manage connected MCP/OpenAPI servers |
+| `call_connected_tool` | Call a dynamic tool on a connected server |
+| `list_secrets`, `use_secret`, `store_secret`, `rotate_secret`, `delete_secret` | Zero-exposure secret use and management |
 
 ### Example Tool Calls
 

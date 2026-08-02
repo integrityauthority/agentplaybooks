@@ -108,6 +108,10 @@ export type CreatePlaybookInput = {
   description?: string | null;
   visibility?: "public" | "private" | "unlisted";
   config?: Record<string, unknown>;
+  tags?: string[];
+  persona_name?: string | null;
+  persona_system_prompt?: string | null;
+  persona_metadata?: Record<string, unknown>;
   /** Always-on project instructions (AGENTS.md / CLAUDE.md content). */
   instructions?: string | null;
 };
@@ -126,6 +130,10 @@ export async function createPlaybook(
       description: input.description || null,
       visibility: input.visibility || "private",
       config: input.config || {},
+      tags: input.tags || [],
+      persona_name: input.persona_name || null,
+      persona_system_prompt: input.persona_system_prompt || null,
+      persona_metadata: input.persona_metadata || {},
       instructions: input.instructions || null,
     })
     .select()

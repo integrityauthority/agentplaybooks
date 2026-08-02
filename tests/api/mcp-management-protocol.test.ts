@@ -38,6 +38,31 @@ describe("AgentPlaybooks management MCP transport", () => {
     expect(await response.json()).toEqual({ jsonrpc: "2.0", id: 2, result: {} });
   });
 
+  it("projects every playbook operation with an explicit playbook_id", async () => {
+    const response = await POST(mcpRequest({ id: 4, method: "tools/list" }));
+    const payload = await response.json();
+    const tools = payload.result.tools as Array<{
+      name: string;
+      inputSchema: { properties?: Record<string, unknown>; required?: string[] };
+    }>;
+    const names = tools.map((tool) => tool.name);
+
+    expect(new Set(names).size).toBe(names.length);
+    expect(names).toEqual(expect.arrayContaining([
+      "list_playbooks",
+      "create_playbook",
+      "create_mcp_server",
+      "create_run",
+      "write_canvas",
+      "store_secret",
+    ]));
+    for (const name of ["create_mcp_server", "create_run", "write_canvas", "store_secret"]) {
+      const tool = tools.find((candidate) => candidate.name === name)!;
+      expect(tool.inputSchema.properties).toHaveProperty("playbook_id");
+      expect(tool.inputSchema.required).toContain("playbook_id");
+    }
+  });
+
   it("rejects unsupported protocol version headers", async () => {
     const response = await POST(mcpRequest(
       { id: 3, method: "ping" },

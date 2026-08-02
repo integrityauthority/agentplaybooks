@@ -60,6 +60,42 @@ This document describes the technical architecture of AgentPlaybooks.
 | Hosting | Cloudflare Pages/Workers | Edge computing, global CDN |
 | Docs | MDX | Markdown + React components |
 
+## Unified Operation Plane
+
+MCP, OpenAPI/REST, and the dashboard are projections over the same playbook
+operation model. Playbook business rules do not belong to a protocol adapter.
+
+- **User control plane:** `POST /api/mcp/manage` can create/list playbooks and
+  exposes every playbook operation with a required `playbook_id` argument.
+- **Direct playbook plane:** `POST /api/mcp/:guid` exposes the same playbook
+  operations with the playbook identity bound in the URL.
+- **OpenAPI/REST projections:** `POST /api/control/:operation` mirrors the user
+  control plane; `POST /api/playbooks/:guid/operations/:operation` mirrors the
+  direct playbook plane.
+- **Dashboard:** dashboard-facing REST routes use the same shared auth and
+  playbook repositories for listing and creation. Editor components continue
+  to consume the common `StorageAdapter` contract.
+
+The canonical tool catalog generates both MCP schemas and OpenAPI operation
+paths. Adding a playbook operation therefore makes it available in both scopes
+without copying its implementation. Dynamic tools from connected MCP servers
+remain namespaced on the direct endpoint; the stable `call_connected_tool`
+operation lets the user control plane call them after creating a playbook.
+
+```
+                         shared playbook operation catalog
+                                      │
+                 ┌────────────────────┼────────────────────┐
+                 ▼                    ▼                    ▼
+        user MCP + playbook_id   direct MCP + :guid   OpenAPI/REST paths
+                 │                    │                    │
+                 └────────────────────┴────────────────────┘
+                                      │
+                          shared auth + repositories
+                                      │
+                                  Supabase
+```
+
 ## Database Schema
 
 ```

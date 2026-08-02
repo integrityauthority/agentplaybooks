@@ -1,6 +1,6 @@
 import { handle } from "hono/vercel";
 import { createApiApp } from "@/app/api/_shared/hono";
-import { validateApiKey } from "@/app/api/_shared/auth";
+import { canAccessPrivatePlaybook, validatePlaybookCredential } from "@/app/api/_shared/auth";
 import { getServiceSupabase, getSupabase } from "@/app/api/_shared/supabase";
 import type { McpResource, McpTool, MCPServer, Playbook, MemoryTier, MemoryType, MemoryStatus, CanvasSection, SecretCategory } from "@/lib/supabase/types";
 import { encryptSecret, decryptSecret } from "@/lib/crypto";
@@ -20,6 +20,18 @@ import { composePlaybookSystemPrompt } from "@/lib/playbook-prompt";
 import { validateAgentSkillDescription, validateAgentSkillName } from "@/lib/agent-skills";
 
 type PersonaSource = Pick<Playbook, "id" | "persona_name" | "persona_system_prompt" | "persona_metadata" | "instructions">;
+
+/**
+ * Keep the route-bound playbook identity in one place while accepting either
+ * a direct playbook key or the user's control-plane key.
+ */
+async function validateApiKey(request: Request, requiredPermission: string) {
+  const pathname = new URL(request.url).pathname;
+  const identifier = pathname.match(/\/api\/mcp\/([^/]+)/)?.[1];
+  return identifier
+    ? validatePlaybookCredential(request, decodeURIComponent(identifier), requiredPermission)
+    : null;
+}
 
 // MCP Protocol implementation for Cloudflare Workers / Next.js
 // Supports: tools/list, resources/list, resources/read, tools/call
@@ -192,24 +204,10 @@ app.get("/", async (c) => {
 
   // If not found as public, try API key auth for private playbooks
   if (!playbook) {
-    const apiKeyData = await validateApiKey(c.req.raw, "memory:read");
-    if (apiKeyData) {
-      const serviceSupabase = getServiceSupabase();
-      let privateQuery = serviceSupabase
-        .from("playbooks")
-        .select("*");
-
-      if (isUuid) {
-        privateQuery = privateQuery.eq("id", guid);
-      } else {
-        privateQuery = privateQuery.eq("guid", guid);
-      }
-
-      // Verify the API key belongs to this playbook
-      const { data: privatePlaybook } = await privateQuery
-        .eq("id", apiKeyData.playbooks.id)
-        .single();
-
+    let privateQuery = getServiceSupabase().from("playbooks").select("*");
+    privateQuery = isUuid ? privateQuery.eq("id", guid) : privateQuery.eq("guid", guid);
+    const { data: privatePlaybook } = await privateQuery.maybeSingle();
+    if (privatePlaybook && await canAccessPrivatePlaybook(c.req.raw, privatePlaybook.id)) {
       playbook = privatePlaybook;
     }
   }
@@ -321,24 +319,12 @@ app.post("/", async (c) => {
 
   // If not found as public, try API key auth for private playbooks
   if (!playbook) {
-    const apiKeyData = await validateApiKey(c.req.raw, "memory:read");
-    if (apiKeyData) {
-      const serviceSupabase = getServiceSupabase();
-      let privateQuery = serviceSupabase
-        .from("playbooks")
-        .select("id, user_id, persona_name, persona_system_prompt, persona_metadata, instructions");
-
-      if (isUuid) {
-        privateQuery = privateQuery.eq("id", guid);
-      } else {
-        privateQuery = privateQuery.eq("guid", guid);
-      }
-
-      // Verify the API key belongs to this playbook
-      const { data: privatePlaybook } = await privateQuery
-        .eq("id", apiKeyData.playbooks.id)
-        .single();
-
+    let privateQuery = getServiceSupabase()
+      .from("playbooks")
+      .select("id, user_id, persona_name, persona_system_prompt, persona_metadata, instructions");
+    privateQuery = isUuid ? privateQuery.eq("id", guid) : privateQuery.eq("guid", guid);
+    const { data: privatePlaybook } = await privateQuery.maybeSingle();
+    if (privatePlaybook && await canAccessPrivatePlaybook(c.req.raw, privatePlaybook.id)) {
       playbook = privatePlaybook;
     }
   }
@@ -1480,23 +1466,28 @@ use_secret({
           // ===== Canvas Tools =====
 
           case "list_canvas": {
-            const { data } = await serviceSupabase
+            const runId = args.run_id as string | undefined;
+            let canvasQuery = serviceSupabase
               .from("canvas")
-              .select("slug, name, sort_order, updated_at, metadata")
-              .eq("playbook_id", playbook.id)
-              .order("sort_order");
+              .select("run_id, slug, name, sort_order, version, updated_at, metadata")
+              .eq("playbook_id", playbook.id);
+            if (runId) canvasQuery = canvasQuery.eq("run_id", runId);
+            const { data } = await canvasQuery.order("sort_order");
             result = data || [];
             break;
           }
 
           case "read_canvas": {
+            const runId = args.run_id as string;
             const slug = args.slug as string;
             const sectionId = args.section_id as string | undefined;
+            if (!runId) throw new Error("run_id is required");
 
             const { data, error } = await serviceSupabase
               .from("canvas")
               .select("*")
               .eq("playbook_id", playbook.id)
+              .eq("run_id", runId)
               .eq("slug", slug)
               .single();
 
@@ -1513,15 +1504,25 @@ use_secret({
           }
 
           case "write_canvas": {
-            const apiKeyData = await validateApiKey(c.req.raw, "memory:write");
+            const apiKeyData = await validateApiKey(c.req.raw, "canvas:write");
             if (!apiKeyData || apiKeyData.playbooks.id !== playbook.id) {
-              throw new Error("API key with memory:write permission required");
+              throw new Error("Credential with canvas:write or full permission required");
             }
 
+            const runId = args.run_id as string;
             const slug = args.slug as string;
             const name = args.name as string;
             const content = args.content as string;
             const docMetadata = args.metadata as Record<string, unknown> || {};
+            if (!runId) throw new Error("run_id is required");
+
+            const { data: run } = await serviceSupabase
+              .from("playbook_runs")
+              .select("id")
+              .eq("id", runId)
+              .eq("playbook_id", playbook.id)
+              .maybeSingle();
+            if (!run) throw new Error("Workflow run not found");
 
             // Parse markdown into sections
             const sections = parseMarkdownSections(content);
@@ -1530,13 +1531,14 @@ use_secret({
               .from("canvas")
               .upsert({
                 playbook_id: playbook.id,
+                run_id: runId,
                 slug,
                 name,
                 content,
                 sections,
                 metadata: docMetadata,
                 updated_at: new Date().toISOString(),
-              }, { onConflict: "playbook_id,slug" })
+              }, { onConflict: "run_id,slug" })
               .select()
               .single();
 
@@ -1546,20 +1548,23 @@ use_secret({
           }
 
           case "patch_canvas_section": {
-            const apiKeyData = await validateApiKey(c.req.raw, "memory:write");
+            const apiKeyData = await validateApiKey(c.req.raw, "canvas:write");
             if (!apiKeyData || apiKeyData.playbooks.id !== playbook.id) {
-              throw new Error("API key with memory:write permission required");
+              throw new Error("Credential with canvas:write or full permission required");
             }
 
+            const runId = args.run_id as string;
             const slug = args.slug as string;
             const sectionId = args.section_id as string;
             const sectionContent = args.content as string;
             const newHeading = args.heading as string | undefined;
+            if (!runId) throw new Error("run_id is required");
 
             const { data: doc, error: fetchErr } = await serviceSupabase
               .from("canvas")
               .select("*")
               .eq("playbook_id", playbook.id)
+              .eq("run_id", runId)
               .eq("slug", slug)
               .single();
 
@@ -1601,6 +1606,7 @@ use_secret({
                 updated_at: new Date().toISOString(),
               })
               .eq("playbook_id", playbook.id)
+              .eq("run_id", runId)
               .eq("slug", slug)
               .select()
               .single();
@@ -1611,12 +1617,15 @@ use_secret({
           }
 
           case "get_canvas_toc": {
+            const runId = args.run_id as string;
             const slug = args.slug as string;
+            if (!runId) throw new Error("run_id is required");
 
             const { data, error } = await serviceSupabase
               .from("canvas")
               .select("slug, name, sections")
               .eq("playbook_id", playbook.id)
+              .eq("run_id", runId)
               .eq("slug", slug)
               .single();
 
@@ -1634,19 +1643,22 @@ use_secret({
           }
 
           case "lock_canvas_section": {
-            const apiKeyData = await validateApiKey(c.req.raw, "memory:write");
+            const apiKeyData = await validateApiKey(c.req.raw, "canvas:write");
             if (!apiKeyData || apiKeyData.playbooks.id !== playbook.id) {
-              throw new Error("API key with memory:write permission required");
+              throw new Error("Credential with canvas:write or full permission required");
             }
 
+            const runId = args.run_id as string;
             const slug = args.slug as string;
             const sectionId = args.section_id as string;
             const lockedBy = args.locked_by as string;
+            if (!runId) throw new Error("run_id is required");
 
             const { data: doc, error: fetchErr } = await serviceSupabase
               .from("canvas")
               .select("sections")
               .eq("playbook_id", playbook.id)
+              .eq("run_id", runId)
               .eq("slug", slug)
               .single();
 
@@ -1674,6 +1686,7 @@ use_secret({
               .from("canvas")
               .update({ sections: docSections, updated_at: new Date().toISOString() })
               .eq("playbook_id", playbook.id)
+              .eq("run_id", runId)
               .eq("slug", slug);
 
             result = { locked: true, section_id: sectionId, locked_by: lockedBy };
@@ -1681,18 +1694,21 @@ use_secret({
           }
 
           case "unlock_canvas_section": {
-            const apiKeyData = await validateApiKey(c.req.raw, "memory:write");
+            const apiKeyData = await validateApiKey(c.req.raw, "canvas:write");
             if (!apiKeyData || apiKeyData.playbooks.id !== playbook.id) {
-              throw new Error("API key with memory:write permission required");
+              throw new Error("Credential with canvas:write or full permission required");
             }
 
+            const runId = args.run_id as string;
             const slug = args.slug as string;
             const sectionId = args.section_id as string;
+            if (!runId) throw new Error("run_id is required");
 
             const { data: doc, error: fetchErr } = await serviceSupabase
               .from("canvas")
               .select("sections")
               .eq("playbook_id", playbook.id)
+              .eq("run_id", runId)
               .eq("slug", slug)
               .single();
 
@@ -1712,6 +1728,7 @@ use_secret({
               .from("canvas")
               .update({ sections: docSections, updated_at: new Date().toISOString() })
               .eq("playbook_id", playbook.id)
+              .eq("run_id", runId)
               .eq("slug", slug);
 
             result = { unlocked: true, section_id: sectionId };
@@ -1925,6 +1942,20 @@ use_secret({
             }
 
             const updates: Record<string, unknown> = {};
+            if (args.name !== undefined) updates.name = args.name;
+            if (args.description !== undefined) updates.description = args.description;
+            if (args.visibility !== undefined) {
+              if (!["public", "private", "unlisted"].includes(args.visibility as string)) throw new Error("Invalid visibility");
+              updates.visibility = args.visibility;
+            }
+            if (args.tags !== undefined) {
+              if (!Array.isArray(args.tags)) throw new Error("tags must be an array");
+              updates.tags = args.tags;
+            }
+            if (args.config !== undefined) {
+              if (typeof args.config !== "object" || args.config === null || Array.isArray(args.config)) throw new Error("config must be an object");
+              updates.config = args.config;
+            }
             if (args.persona_name !== undefined) updates.persona_name = args.persona_name;
             if (args.persona_system_prompt !== undefined) updates.persona_system_prompt = args.persona_system_prompt;
             if (args.persona_metadata !== undefined) updates.persona_metadata = args.persona_metadata;
@@ -1940,11 +1971,228 @@ use_secret({
               .from("playbooks")
               .update(updates)
               .eq("id", playbook.id)
-              .select("id, persona_name, persona_system_prompt, persona_metadata, instructions, updated_at")
+              .select("id, guid, name, description, visibility, tags, config, persona_name, persona_system_prompt, persona_metadata, instructions, updated_at")
               .single();
 
             if (error) throw new Error(error.message);
             result = data;
+            break;
+          }
+
+          // ===== Connected MCP / OpenAPI Servers =====
+          case "call_connected_tool": {
+            const serverIdentifier = args.server_id as string;
+            const connectedToolName = args.tool_name as string;
+            if (!serverIdentifier || !connectedToolName) throw new Error("server_id and tool_name are required");
+            const serverIsUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(serverIdentifier);
+            let connectedServerQuery = serviceSupabase
+              .from("mcp_servers")
+              .select("*")
+              .eq("playbook_id", playbook.id);
+            connectedServerQuery = serverIsUuid
+              ? connectedServerQuery.eq("id", serverIdentifier)
+              : connectedServerQuery.eq("name", serverIdentifier);
+            const { data: server, error: serverError } = await connectedServerQuery
+              .limit(1)
+              .maybeSingle();
+            if (serverError || !server) throw new Error("Connected MCP server not found");
+
+            const access = (server.transport_config as { access?: string } | null)?.access;
+            if (access !== "public") {
+              const credential = await validateApiKey(c.req.raw, "tools:call");
+              if (!credential || credential.playbooks.id !== playbook.id) {
+                throw new Error("Credential with tools:call or full permission required");
+              }
+            }
+
+            const exposedName = connectedToolName.startsWith("ext__")
+              ? connectedToolName
+              : `${federatedServerPrefix(server as MCPServer)}${connectedToolName}`;
+            result = await callFederatedTool(
+              server as MCPServer,
+              exposedName,
+              (args.arguments as Record<string, unknown> | undefined) || {},
+              await federationOptions(server as MCPServer, playbook.id, c.req.header("cf-ray") || c.req.header("x-request-id")),
+            );
+            break;
+          }
+
+          case "list_mcp_servers": {
+            const { data, error } = await serviceSupabase
+              .from("mcp_servers")
+              .select("*")
+              .eq("playbook_id", playbook.id)
+              .order("created_at", { ascending: true });
+            if (error) throw new Error(error.message);
+            result = data || [];
+            break;
+          }
+
+          case "create_mcp_server": {
+            const credential = await validateApiKey(c.req.raw, "playbooks:write");
+            if (!credential || credential.playbooks.id !== playbook.id) {
+              throw new Error("Credential with playbooks:write or full permission required");
+            }
+            const name = typeof args.name === "string" ? args.name.trim() : "";
+            if (!name) throw new Error("name is required");
+            const transportType = (args.transport_type as string | undefined) || "http";
+            if (!["stdio", "http", "sse", "openapi"].includes(transportType)) {
+              throw new Error("Invalid MCP transport type");
+            }
+            if (args.transport_config !== undefined && (
+              typeof args.transport_config !== "object"
+              || args.transport_config === null
+              || Array.isArray(args.transport_config)
+            )) {
+              throw new Error("transport_config must be an object");
+            }
+            const { data, error } = await serviceSupabase
+              .from("mcp_servers")
+              .insert({
+                playbook_id: playbook.id,
+                name,
+                description: typeof args.description === "string" ? args.description : null,
+                tools: Array.isArray(args.tools) ? args.tools : [],
+                resources: Array.isArray(args.resources) ? args.resources : [],
+                transport_type: transportType as "stdio" | "http" | "sse" | "openapi",
+                transport_config: (args.transport_config as Record<string, unknown> | undefined) || {},
+              })
+              .select()
+              .single();
+            if (error || !data) throw new Error(error?.message || "Failed to connect MCP server");
+            result = data;
+            break;
+          }
+
+          case "update_mcp_server": {
+            const credential = await validateApiKey(c.req.raw, "playbooks:write");
+            if (!credential || credential.playbooks.id !== playbook.id) {
+              throw new Error("Credential with playbooks:write or full permission required");
+            }
+            const serverId = args.server_id as string;
+            if (!serverId) throw new Error("server_id is required");
+            if (args.transport_type !== undefined && !["stdio", "http", "sse", "openapi"].includes(args.transport_type as string)) {
+              throw new Error("Invalid MCP transport type");
+            }
+            if (args.transport_config !== undefined && (
+              typeof args.transport_config !== "object"
+              || args.transport_config === null
+              || Array.isArray(args.transport_config)
+            )) {
+              throw new Error("transport_config must be an object");
+            }
+            const updates: Record<string, unknown> = {};
+            for (const field of ["name", "description", "tools", "resources", "transport_type", "transport_config"] as const) {
+              if (args[field] !== undefined) updates[field] = args[field];
+            }
+            if (Object.keys(updates).length === 0) throw new Error("No fields to update");
+            const { data, error } = await serviceSupabase
+              .from("mcp_servers")
+              .update(updates)
+              .eq("id", serverId)
+              .eq("playbook_id", playbook.id)
+              .select()
+              .single();
+            if (error || !data) throw new Error(error?.message || "MCP server not found");
+            result = data;
+            break;
+          }
+
+          case "delete_mcp_server": {
+            const credential = await validateApiKey(c.req.raw, "playbooks:write");
+            if (!credential || credential.playbooks.id !== playbook.id) {
+              throw new Error("Credential with playbooks:write or full permission required");
+            }
+            const serverId = args.server_id as string;
+            if (!serverId) throw new Error("server_id is required");
+            const { error } = await serviceSupabase
+              .from("mcp_servers")
+              .delete()
+              .eq("id", serverId)
+              .eq("playbook_id", playbook.id);
+            if (error) throw new Error(error.message);
+            result = { success: true, deleted: serverId };
+            break;
+          }
+
+          // ===== Workflow Runs =====
+          case "list_runs": {
+            const { data, error } = await serviceSupabase
+              .from("playbook_runs")
+              .select("*")
+              .eq("playbook_id", playbook.id)
+              .order("updated_at", { ascending: false });
+            if (error) throw new Error(error.message);
+            result = data || [];
+            break;
+          }
+
+          case "create_run": {
+            const credential = await validateApiKey(c.req.raw, "canvas:write");
+            if (!credential || credential.playbooks.id !== playbook.id) {
+              throw new Error("Credential with canvas:write or full permission required");
+            }
+            const name = typeof args.name === "string" ? args.name.trim() : "";
+            if (!name) throw new Error("name is required");
+            const { data, error } = await serviceSupabase
+              .from("playbook_runs")
+              .insert({
+                playbook_id: playbook.id,
+                created_by: credential.userId,
+                name,
+                status: "active",
+                context: (args.context as Record<string, unknown> | undefined) || {},
+              })
+              .select()
+              .single();
+            if (error || !data) throw new Error(error?.message || "Failed to create workflow run");
+            result = data;
+            break;
+          }
+
+          case "update_run": {
+            const credential = await validateApiKey(c.req.raw, "canvas:write");
+            if (!credential || credential.playbooks.id !== playbook.id) {
+              throw new Error("Credential with canvas:write or full permission required");
+            }
+            const runId = args.run_id as string;
+            if (!runId) throw new Error("run_id is required");
+            const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+            if (typeof args.name === "string" && args.name.trim()) updates.name = args.name.trim();
+            if (args.status !== undefined) {
+              if (!["active", "completed", "archived"].includes(args.status as string)) throw new Error("Invalid run status");
+              updates.status = args.status;
+            }
+            if (args.context !== undefined) {
+              if (typeof args.context !== "object" || args.context === null || Array.isArray(args.context)) throw new Error("context must be an object");
+              updates.context = args.context;
+            }
+            const { data, error } = await serviceSupabase
+              .from("playbook_runs")
+              .update(updates)
+              .eq("id", runId)
+              .eq("playbook_id", playbook.id)
+              .select()
+              .single();
+            if (error || !data) throw new Error(error?.message || "Workflow run not found");
+            result = data;
+            break;
+          }
+
+          case "delete_run": {
+            const credential = await validateApiKey(c.req.raw, "canvas:write");
+            if (!credential || credential.playbooks.id !== playbook.id) {
+              throw new Error("Credential with canvas:write or full permission required");
+            }
+            const runId = args.run_id as string;
+            if (!runId) throw new Error("run_id is required");
+            const { error } = await serviceSupabase
+              .from("playbook_runs")
+              .delete()
+              .eq("id", runId)
+              .eq("playbook_id", playbook.id);
+            if (error) throw new Error(error.message);
+            result = { success: true, deleted: runId };
             break;
           }
 

@@ -6,7 +6,17 @@ This guide explains how to use AgentPlaybooks with the Model Context Protocol (M
 
 The [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) is an open standard developed by Anthropic that enables AI assistants to securely connect to external data sources and tools.
 
-AgentPlaybooks provides an MCP-compatible server endpoint for each public playbook.
+AgentPlaybooks provides a direct MCP endpoint for each playbook and a user-level
+control plane that can create a playbook and immediately apply it.
+
+| Scope | MCP endpoint | Playbook identity |
+|-------|--------------|-------------------|
+| User control plane | `https://agentplaybooks.ai/api/mcp/manage` | Required `playbook_id` tool argument |
+| Direct playbook | `https://agentplaybooks.ai/api/mcp/YOUR_GUID` | Bound in the URL |
+
+Both scopes project the same canonical playbook operations. The user control
+plane is the endpoint published to registries such as Glama because it supports
+the full account-to-playbook lifecycle in one connection.
 
 ## Quick Start
 
@@ -209,8 +219,14 @@ The MCP server exposes built-in tools for interacting with the playbook. Skills 
 | **Skills** | `list_skills`, `get_skill`, `create_skill`, `update_skill`, `delete_skill`, `list_skill_versions`, `rollback_skill` |
 | **Memory** | `read_memory`, `write_memory`, `search_memory`, `delete_memory`, `consolidate_memories`, `promote_memory`, `get_memory_context`, `archive_memories`, `get_memory_tree`, `create_task_graph`, `update_task_status` |
 | **Canvas** | `list_canvas`, `read_canvas`, `write_canvas`, `patch_canvas_section`, `get_canvas_toc`, `lock_canvas_section`, `unlock_canvas_section` |
+| **Workflow runs** | `list_runs`, `create_run`, `update_run`, `delete_run` |
+| **Connected MCP/OpenAPI** | `list_mcp_servers`, `create_mcp_server`, `update_mcp_server`, `delete_mcp_server`, `call_connected_tool` |
 | **Secrets** | `list_secrets`, `use_secret`, `store_secret`, `rotate_secret`, `delete_secret` |
 | **Playbook** | `update_playbook` |
+
+Canvas documents are isolated by workflow run. Pass `run_id` to document-level
+canvas tools; create one first with `create_run`. The control plane additionally
+requires `playbook_id`, while the direct endpoint gets the playbook from its URL.
 
 ## Available Resources
 

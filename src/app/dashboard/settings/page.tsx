@@ -15,6 +15,10 @@ import {
   Settings
 } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
+import {
+  DEFAULT_USER_API_KEY_PERMISSIONS,
+  USER_API_KEY_PERMISSION_OPTIONS,
+} from "@/lib/user-api-key-permissions";
 
 interface UserApiKey {
   id: string;
@@ -32,25 +36,13 @@ interface NewKeyResponse extends UserApiKey {
   warning: string;
 }
 
-const AVAILABLE_PERMISSIONS = [
-  { id: "playbooks:read", label: "Read Playbooks", description: "List and view your playbooks" },
-  { id: "playbooks:write", label: "Write Playbooks", description: "Create, update, delete playbooks" },
-  { id: "personas:write", label: "Write Personas", description: "Add, update, delete personas" },
-  { id: "skills:write", label: "Write Skills", description: "Add, update, delete skills" },
-  { id: "memory:read", label: "Read Memory", description: "Read memory entries" },
-  { id: "memory:write", label: "Write Memory", description: "Write and delete memory entries" },
-  { id: "canvas:read", label: "Read Canvas", description: "Read canvas work documents" },
-  { id: "canvas:write", label: "Write Canvas", description: "Create and revise canvas work documents" },
-  { id: "full", label: "Full Access", description: "All permissions" },
-];
-
 export default function SettingsPage() {
   const [user, setUser] = useState<User | null>(null);
   const [apiKeys, setApiKeys] = useState<UserApiKey[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
-  const [selectedPermissions, setSelectedPermissions] = useState<string[]>(["playbooks:read", "playbooks:write", "memory:read", "memory:write", "canvas:read", "canvas:write"]);
+  const [selectedPermissions, setSelectedPermissions] = useState<string[]>([...DEFAULT_USER_API_KEY_PERMISSIONS]);
   const [createdKey, setCreatedKey] = useState<NewKeyResponse | null>(null);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -153,7 +145,7 @@ export default function SettingsPage() {
     setShowCreateModal(false);
     setCreatedKey(null);
     setNewKeyName("");
-    setSelectedPermissions(["playbooks:read", "playbooks:write", "memory:read", "memory:write", "canvas:read", "canvas:write"]);
+    setSelectedPermissions([...DEFAULT_USER_API_KEY_PERMISSIONS]);
     setError(null);
   };
 
@@ -405,7 +397,7 @@ export default function SettingsPage() {
                       Permissions
                     </label>
                     <div className="space-y-2 max-h-60 overflow-y-auto">
-                      {AVAILABLE_PERMISSIONS.map((perm) => (
+                    {USER_API_KEY_PERMISSION_OPTIONS.map((perm) => (
                         <label
                           key={perm.id}
                           className={`flex items-start gap-3 p-3 rounded-lg cursor-pointer transition-colors ${selectedPermissions.includes(perm.id)

@@ -1,12 +1,25 @@
 import { hashApiKey } from "@/lib/utils";
 import { getServiceSupabase, getSupabase } from "./supabase";
 import type { ApiKey, UserApiKeysRow } from "@/lib/supabase/types";
+import { getPlaybookAccessRole } from "./guards";
 
 type ApiKeyWithPlaybook = ApiKey & {
   playbooks: { id: string; guid: string };
 };
 
 type UserApiKeyData = UserApiKeysRow & { user_id: string };
+
+export type PlaybookRequestActor = {
+  kind: "playbook_key" | "user_key" | "session";
+  playbookId: string;
+  userId: string | null;
+  keyPrefix: string | null;
+};
+
+export type PlaybookCredential = PlaybookRequestActor & {
+  key_prefix: string;
+  playbooks: { id: string; guid: string };
+};
 
 /**
  * Resolve the signed-in user from the request's bearer token.
@@ -92,7 +105,7 @@ export async function validateApiKey(
 
 export async function validateUserApiKey(
   request: Request,
-  requiredPermission: string
+  requiredPermission?: string
 ): Promise<UserApiKeyData | null> {
   const authHeader = request.headers.get("Authorization");
   if (!authHeader?.startsWith("Bearer apb_")) {
@@ -117,7 +130,11 @@ export async function validateUserApiKey(
     return null;
   }
 
-  if (!userKeyData.permissions.includes(requiredPermission) && !userKeyData.permissions.includes("full")) {
+  if (
+    requiredPermission
+    && !userKeyData.permissions.includes(requiredPermission)
+    && !userKeyData.permissions.includes("full")
+  ) {
     return null;
   }
 
@@ -144,4 +161,88 @@ export async function getUserFromAuthOrApiKey(
   }
 
   return null;
+}
+
+/**
+ * Authorize one playbook operation independently of the transport that
+ * exposed it. A direct playbook key, a user control-plane key, or a dashboard
+ * session can therefore invoke the same operation implementation.
+ */
+export async function authorizePlaybookRequest(
+  request: Request,
+  playbookId: string,
+  requiredPermission: string,
+): Promise<PlaybookRequestActor | null> {
+  const playbookKey = await validateApiKey(request, requiredPermission);
+  if (playbookKey?.playbooks.id === playbookId) {
+    return {
+      kind: "playbook_key",
+      playbookId,
+      userId: null,
+      keyPrefix: playbookKey.key_prefix,
+    };
+  }
+
+  const userKey = await validateUserApiKey(request, requiredPermission);
+  if (userKey && await getPlaybookAccessRole(userKey.user_id, playbookId)) {
+    return {
+      kind: "user_key",
+      playbookId,
+      userId: userKey.user_id,
+      keyPrefix: userKey.key_prefix,
+    };
+  }
+
+  const user = await getAuthenticatedUser(request);
+  if (user && await getPlaybookAccessRole(user.id, playbookId)) {
+    return {
+      kind: "session",
+      playbookId,
+      userId: user.id,
+      keyPrefix: null,
+    };
+  }
+
+  return null;
+}
+
+/** Resolve a path-bound playbook and authorize either kind of API key. */
+export async function validatePlaybookCredential(
+  request: Request,
+  identifier: string,
+  requiredPermission: string,
+): Promise<PlaybookCredential | null> {
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identifier);
+  let query = getServiceSupabase().from("playbooks").select("id, guid");
+  query = isUuid ? query.eq("id", identifier) : query.eq("guid", identifier);
+  const { data: playbook } = await query.maybeSingle();
+  if (!playbook) return null;
+
+  const actor = await authorizePlaybookRequest(request, playbook.id, requiredPermission);
+  if (!actor) return null;
+
+  return {
+    ...actor,
+    key_prefix: actor.keyPrefix || `session:${actor.userId || "unknown"}`,
+    playbooks: playbook,
+  };
+}
+
+/**
+ * Private playbook discovery needs only enough identity to prove that the
+ * credential belongs to this playbook/user. The concrete operation performs
+ * its own scoped permission check afterwards.
+ */
+export async function canAccessPrivatePlaybook(
+  request: Request,
+  playbookId: string,
+): Promise<boolean> {
+  const playbookKey = await validateApiKey(request, "memory:read");
+  if (playbookKey?.playbooks.id === playbookId) return true;
+
+  const userKey = await validateUserApiKey(request, "playbooks:read");
+  if (userKey && await getPlaybookAccessRole(userKey.user_id, playbookId)) return true;
+
+  const user = await getAuthenticatedUser(request);
+  return !!user && !!await getPlaybookAccessRole(user.id, playbookId);
 }
