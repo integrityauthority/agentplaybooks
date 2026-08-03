@@ -1,6 +1,6 @@
 ---
 title: Willkommen bei AgentPlaybooks
-description: Wir präsentieren den universellen Speicher für Fähigkeiten und Erinnerungen Ihrer KI-Agenten.
+description: Wir präsentieren die portable Arbeitsumgebung für Ihre KI-Agenten — Persona, Skills, Werkzeuge und Speicher in einem Playbook.
 date: 2026-01-07
 author: Mate Benyovszky
 ---

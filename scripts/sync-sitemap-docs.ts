@@ -10,26 +10,33 @@
 
 import { promises as fs } from "fs";
 import path from "path";
+import { locales } from "../src/i18n/config";
 
 const DOCS_DIR = path.join(process.cwd(), "public", "docs");
 const SITEMAP_FILE = path.join(process.cwd(), "src", "app", "sitemap.ts");
+
+// Translations live beside their source as `<slug>.<locale>.md`. They are not
+// separate URLs — the docs route serves them for the same slug based on the
+// request locale — so a naive readdir would put `cli.hu` in the sitemap as a
+// page that does not exist.
+const LOCALE_SUFFIX = new RegExp(`\\.(${locales.join("|")})$`, "i");
 
 async function getDocSlugs(): Promise<string[]> {
   const entries = await fs.readdir(DOCS_DIR, { withFileTypes: true });
 
   return entries
     .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".md"))
-    .map((entry) => {
-      const base = entry.name.replace(/\.md$/i, "");
-      // Keep original case for display, lowercase for URL consistency
-      return base.toLowerCase() === "readme" ? "readme" : base;
-    })
+    .map((entry) => entry.name.replace(/\.md$/i, ""))
+    .filter((base) => !LOCALE_SUFFIX.test(base))
+    // Slugs are lowercase in URLs, and `normalizeDocSlug` lowercases whatever
+    // arrives, so ROADMAP.md has to be listed as `roadmap`.
+    .map((base) => base.toLowerCase())
     .sort((a, b) => {
-      // Sort: readme first, then ROADMAP last, rest alphabetically
+      // Sort: readme first, then roadmap last, rest alphabetically
       if (a === "readme") return -1;
       if (b === "readme") return 1;
-      if (a === "ROADMAP") return 1;
-      if (b === "ROADMAP") return -1;
+      if (a === "roadmap") return 1;
+      if (b === "roadmap") return -1;
       return a.localeCompare(b);
     });
 }

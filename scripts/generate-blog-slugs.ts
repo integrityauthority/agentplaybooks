@@ -35,7 +35,9 @@ type GeneratedBlogData = {
 const localePattern = /^[a-z]{2}$/;
 
 function parseFrontmatter(fileContent: string): { metadata: Record<string, string> } {
-  const frontmatterRegex = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/;
+  // `\r?\n`, not `\n`: a CRLF checkout otherwise fails to match and every post
+  // silently falls back to its slug as the title with an empty description.
+  const frontmatterRegex = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/;
   const match = fileContent.match(frontmatterRegex);
 
   if (!match) {

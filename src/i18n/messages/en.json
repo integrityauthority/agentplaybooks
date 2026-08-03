@@ -17,8 +17,8 @@
   },
   "landing": {
     "hero": {
-      "title": "Your Agents. Your Skills. Any Platform.",
-      "subtitle": "Keep personas, skills, MCP servers, project instructions, and memory in one vendor-neutral home. Switch platforms or use several at once without losing your setup.",
+      "title": "One playbook. Every agent.",
+      "subtitle": "Skills, MCP servers, project instructions, and memory in one portable source of truth — deployed to Claude Code, Cursor, Codex, Antigravity, and Hermes from a single command.",
       "cta": "Explore Playbooks",
       "tryDemo": "Try Demo"
     },
@@ -261,7 +261,7 @@
     }
   },
   "explore": {
-    "title": "Skills Store",
+    "title": "Explore",
     "subtitle": "Discover AI skills, playbooks, and MCP servers shared by the community.",
     "tabPlaybooks": "Playbooks",
     "tabSkills": "Skills",

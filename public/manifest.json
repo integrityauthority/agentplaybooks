@@ -1,7 +1,7 @@
 {
   "name": "AgentPlaybooks",
   "short_name": "AgentPlaybooks",
-  "description": "AI Agent Rules, Skills & Memory Store - The universal skills store for AI agents",
+  "description": "One playbook, every agent — a portable operating environment holding your agents' skills, MCP servers, instructions, and memory",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0a0f1a",

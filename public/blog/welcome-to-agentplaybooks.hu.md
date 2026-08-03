@@ -1,6 +1,6 @@
 ---
 title: Üdvözlünk az AgentPlaybooks-on
-description: Bemutatjuk az AI ágensek univerzális készségtárát és memóriáját.
+description: Bemutatjuk az AI ágensek hordozható működési környezetét — persona, skillek, eszközök és memória egyetlen playbookban.
 date: 2026-01-07
 author: Mate Benyovszky
 ---

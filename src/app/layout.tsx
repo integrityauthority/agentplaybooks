@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { NextIntlClientProvider } from "next-intl";
 import { getLocale, getMessages } from "next-intl/server";
+import { SITE_URL } from "@/lib/site-url";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -15,17 +16,16 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? "https://agentplaybooks.ai"),
-  title: "AgentPlaybooks - Your Agents. Your Skills. Any Platform.",
-  description: "A vendor-neutral home for AI agent skills, personas, MCP servers, project instructions, and memory. Keep your setup portable and in sync across platforms without vendor lock-in.",
+  metadataBase: new URL(SITE_URL),
+  title: "AgentPlaybooks — One Playbook, Every Agent",
+  description: "A portable operating environment for AI agents. Keep skills, MCP servers, project instructions, and memory in one source of truth, deployed to Claude Code, Cursor, Codex, Antigravity, and Hermes from a single command.",
   keywords: [
-    "AI agent", "agent rules", "AI chores", "skills store", "agent memory",
-    "Anthropic skills", "skills.md", "MCP protocol", "MCP server",
-    "GPT actions", "ChatGPT custom GPT", "Claude projects", "Gemini gems",
-    "cursor rules", "AI automation", "agent playbook", "AI personas",
-    "robot skills", "AI toolkit", "agent configuration", "JSON schema",
-    "OpenAPI", "platform-independent AI", "AI vault", "agent marketplace",
-    "subagent", "jack is", "skill download", "i know kungfu"
+    "agent configuration", "agent skills", "SKILL.md", "AGENTS.md",
+    "MCP server", "Model Context Protocol", "agent memory", "agent persona",
+    "Claude Code skills", "Cursor rules", "Codex CLI", "Google Antigravity",
+    "Hermes Agent", "ChatGPT custom GPT", "Gemini gems", "local LLM",
+    "portable AI configuration", "vendor lock-in", "self-hosted AI",
+    "agent secrets management", "OpenAPI", "JSON schema", "robot skills"
   ],
   icons: {
     icon: [
@@ -38,8 +38,8 @@ export const metadata: Metadata = {
   },
   manifest: "/manifest.json",
   openGraph: {
-    title: "AgentPlaybooks - Your Agents. Your Skills. Any Platform.",
-    description: "Your vendor-neutral home for agent rules, skills, personas, MCP servers, and memory. Switch platforms without losing your setup.",
+    title: "AgentPlaybooks — One Playbook, Every Agent",
+    description: "A portable operating environment for AI agents: skills, MCP servers, instructions, and memory in one source of truth that deploys to every agent tool you use.",
     type: "website",
     siteName: "AgentPlaybooks",
     images: [
@@ -47,23 +47,25 @@ export const metadata: Metadata = {
         url: "/og-image.png",
         width: 1200,
         height: 630,
-        alt: "AgentPlaybooks - AI Agent Skills Store",
+        alt: "AgentPlaybooks — one playbook, every agent",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "AgentPlaybooks - AI Agent Skills Store",
-    description: "Store AI agent rules, skills, MCP servers, and memory in a portable, vendor-neutral vault for ChatGPT, Claude, Gemini, Cursor, Codex, and more.",
+    title: "AgentPlaybooks — One Playbook, Every Agent",
+    description: "Keep agent skills, MCP servers, instructions, and memory in one portable playbook. Deploys to Claude Code, Cursor, Codex, Antigravity, and Hermes from a single command.",
     images: ["/twitter-image.png"],
   },
   robots: {
     index: true,
     follow: true,
   },
-  alternates: {
-    canonical: "https://agentplaybooks.ai",
-  },
+  // No `alternates.canonical` here on purpose. Next.js metadata is
+  // shallow-merged, so a canonical set on the root layout is inherited by every
+  // route that does not override it — which pointed all of /docs/* and /blog/*
+  // at the homepage and made them look like duplicates of it. Each route
+  // declares its own canonical instead.
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",

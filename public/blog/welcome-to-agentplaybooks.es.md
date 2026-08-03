@@ -1,6 +1,6 @@
 ---
 title: Bienvenido a AgentPlaybooks
-description: Presentamos el almacén universal de habilidades y memoria para tus agentes de IA.
+description: Presentamos el entorno operativo portátil para tus agentes de IA — persona, habilidades, herramientas y memoria en un solo playbook.
 date: 2026-01-07
 author: Mate Benyovszky
 ---

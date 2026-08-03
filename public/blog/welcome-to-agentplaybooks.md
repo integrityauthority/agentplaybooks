@@ -1,6 +1,6 @@
 ---
 title: Welcome to AgentPlaybooks
-description: Introducing the universal skills store and memory vault for your AI agents.
+description: Introducing the portable operating environment for your AI agents — persona, skills, tools, and memory in one playbook.
 date: 2026-01-07
 author: Mate Benyovszky
 ---
