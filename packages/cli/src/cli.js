@@ -1,11 +1,13 @@
+import os from "node:os";
 import path from "node:path";
 import readline from "node:readline";
 import { printDoctor, publicReport, runDoctor, runGlobalDoctor } from "./doctor.js";
-import { applySync, planSync, printSyncPlan } from "./sync.js";
+import { applySync, planGlobalSync, planSync, printSyncPlan } from "./sync.js";
 import {
   applyPull,
   applyPush,
   listPlaybooks,
+  planGlobalPush,
   planPull,
   planPush,
   readLink,
@@ -15,6 +17,14 @@ import {
   saveApiKey,
   verifyApiKey,
 } from "./remote.js";
+import {
+  applyRewrite,
+  inventoryForAdoption,
+  planAdoption,
+  publicAdoption,
+  readConfigForRewrite,
+  rewriteConfig,
+} from "./adopt.js";
 import {
   assertSecretName,
   buildRunEnvironment,
@@ -31,17 +41,21 @@ import {
 const HELP = `AgentPlaybooks CLI
 
 Usage:
-  agentplaybooks doctor [path] [--json] [--strict] [--global]
+  agentplaybooks doctor [path] [--json] [--strict] [--global] [--include-vendored]
   agentplaybooks sync [path] [--apply] [--json] [--target=<types>]
+  agentplaybooks sync --global [--apply] [--json] [--target=<types>] [--include-vendored]
   agentplaybooks login [--url=<base>]
   agentplaybooks logout [--url=<base>]
   agentplaybooks playbooks [--url=<base>] [--json]
   agentplaybooks pull <id|guid> [path] [--apply] [--json] [--url=<base>]
   agentplaybooks push [path] [--apply] [--json] [--url=<base>]
+  agentplaybooks push --global [--apply] [--json] [--include-vendored]
   agentplaybooks secrets login <guid> [--url=<base>]
   agentplaybooks secrets status [path] [--json] [--url=<base>]
   agentplaybooks secrets push <NAME> [--from-env=<VAR>] [--yes] [--url=<base>]
   agentplaybooks secrets run [path] -- <command> [args...]
+  agentplaybooks secrets adopt [path] [--global] [--apply] [--rewrite=<files>]
+                              [--prefix=<P>] [--json] [--yes]
 
 Commands:
   doctor     Audit agent instructions, skills, MCP configuration, secrets, and drift.
@@ -49,6 +63,11 @@ Commands:
              for enabled targets (claude, cursor, codex, antigravity, hermes).
              --target=claude,codex enables targets a project does not have yet,
              which is what a freshly pulled playbook needs.
+             --global works across your home-scoped stores (~/.cursor/skills,
+             ~/.claude/skills, the Hermes profile) instead of one project. It
+             moves skills only: a global MCP config holds credentials, so
+             copying it between clients would spread them. Skills the clients
+             ship with themselves are left out unless --include-vendored.
   login      Store an AgentPlaybooks user API key (apb_...) for a remote.
              Reads AGENTPLAYBOOKS_API_KEY, or prompts on stdin.
   logout     Remove the stored API key for a remote.
@@ -57,9 +76,17 @@ Commands:
              .agents/skills and link the project to that playbook.
   push       Plan or apply uploading local skills and the manifest to the
              linked (or a new) remote playbook. Secret values are never sent.
+             --global uploads this machine's own skills instead of one project's,
+             as a workstation playbook. MCP configuration stays local: a
+             home-scoped MCP config is where auth headers live.
   secrets    Work with the playbook's encrypted vault. 'status' compares what
              the playbook needs against the vault and this shell, 'push' stores
              one value, and 'run' injects values into one child process.
+             'adopt' takes a credential that is already hard-coded in an MCP
+             configuration, stores it in the vault, and — only for the files you
+             name with --rewrite — replaces the literal with a \${VAR} reference.
+             Without --rewrite no file is touched, so a configuration that works
+             today keeps working.
              Requires a playbook-scoped API key: 'secrets login <guid>'.
 
 Safety:
@@ -146,6 +173,45 @@ function printRemotePlan(kind, plan) {
   }
 }
 
+const EXPANSION_NOTE = {
+  documented: "the client expands ${VAR} here (documented)",
+  undocumented: "the client is reported to expand ${VAR} here, but does not document it",
+  unsupported: "this configuration format is not rewritten yet",
+  unknown: "unknown client — verify that it expands ${VAR} before rewriting",
+};
+
+function printAdoptionPlan(plan, requestedRewrites) {
+  for (const item of plan.skipped) {
+    console.log(`  [skipped] ${item.source}: ${item.reason}`);
+  }
+  if (plan.secrets.length === 0) {
+    console.log("No hard-coded credential found in the MCP configuration.");
+    return;
+  }
+  console.log(`Found ${plan.secrets.length} value(s) to adopt (values are never shown):`);
+  for (const secret of plan.secrets) {
+    console.log(`  ${secret.name} (${secret.value.length} characters)`);
+    for (const occurrence of secret.occurrences) {
+      const rewrite = requestedRewrites.includes(occurrence.source) ? "will rewrite" : "left as it is";
+      console.log(`    ${occurrence.source} → ${occurrence.keyPath.join(".")}`);
+      console.log(`      ${rewrite}; ${EXPANSION_NOTE[occurrence.expansion]}`);
+    }
+  }
+}
+
+async function resolveVaultAccess(url, root, flags) {
+  const link = await readLink(root);
+  const guid = typeof flags.get("--playbook") === "string" ? flags.get("--playbook") : link?.guid;
+  if (!guid) {
+    throw new Error("This project is not linked to a playbook. Run 'agentplaybooks pull <guid> --apply' first, or pass --playbook=<guid>.");
+  }
+  const playbookKey = await resolvePlaybookKey(url, guid);
+  if (!playbookKey) {
+    throw new Error(`No playbook key for ${guid}. Run 'agentplaybooks secrets login ${guid}', or set AGENTPLAYBOOKS_PLAYBOOK_KEY.`);
+  }
+  return { guid, playbookKey };
+}
+
 async function runSecrets(url, flags, positional, rest) {
   const subcommand = positional[0];
 
@@ -171,18 +237,15 @@ async function runSecrets(url, flags, positional, rest) {
     throw new Error("Usage: agentplaybooks secrets run [path] -- <command> [args...]");
   }
 
-  const root = path.resolve(
-    subcommand === "push" ? (positional[2] ?? process.cwd()) : (positional[1] ?? process.cwd()),
-  );
-  const link = await readLink(root);
-  const guid = typeof flags.get("--playbook") === "string" ? flags.get("--playbook") : link?.guid;
-  if (!guid) {
-    throw new Error("This project is not linked to a playbook. Run 'agentplaybooks pull <guid> --apply' first, or pass --playbook=<guid>.");
-  }
-  const playbookKey = await resolvePlaybookKey(url, guid);
-  if (!playbookKey) {
-    throw new Error(`No playbook key for ${guid}. Run 'agentplaybooks secrets login ${guid}', or set AGENTPLAYBOOKS_PLAYBOOK_KEY.`);
-  }
+  const root = flags.has("--global")
+    ? os.homedir()
+    : path.resolve(subcommand === "push" ? (positional[2] ?? process.cwd()) : (positional[1] ?? process.cwd()));
+
+  // Planning an adoption reads local files and talks to nobody, so it must not
+  // demand a vault credential first. Everything else here needs the vault.
+  const needsVault = subcommand !== "adopt" || flags.has("--apply");
+  const vault = needsVault ? await resolveVaultAccess(url, root, flags) : { guid: null, playbookKey: null };
+  const { guid, playbookKey } = vault;
 
   if (subcommand === "status") {
     const [manifestSecrets, vaultSecrets] = await Promise.all([
@@ -243,6 +306,86 @@ async function runSecrets(url, flags, positional, rest) {
     return;
   }
 
+  if (subcommand === "adopt") {
+    const inventory = await inventoryForAdoption({ global: flags.has("--global"), root });
+    const prefix = typeof flags.get("--prefix") === "string" ? flags.get("--prefix") : "";
+    const plan = planAdoption(inventory, { prefix });
+    const requestedRewrites = typeof flags.get("--rewrite") === "string"
+      ? flags.get("--rewrite").split(",").map((value) => value.trim()).filter(Boolean)
+      : [];
+
+    if (flags.has("--json")) {
+      console.log(JSON.stringify(publicAdoption(plan), null, 2));
+    } else {
+      printAdoptionPlan(plan, requestedRewrites);
+    }
+    if (plan.secrets.length === 0) return;
+
+    if (!flags.has("--apply")) {
+      if (!flags.has("--json")) {
+        console.log("");
+        console.log("Nothing has been uploaded and no file has been changed.");
+        console.log("Run again with --apply to store the values in the vault, and add");
+        console.log("--rewrite=<file> for each file whose literal should become a ${VAR} reference.");
+      }
+      return;
+    }
+
+    const vaultSecrets = await listVaultSecrets(url, guid, playbookKey);
+    const stored = new Set(vaultSecrets.map((secret) => secret.name));
+    if (!flags.has("--yes") && !(await confirm(`Store ${plan.secrets.length} value(s) in the vault of ${guid}?`))) {
+      console.log("Nothing was sent.");
+      return;
+    }
+
+    for (const secret of plan.secrets) {
+      assertSecretName(secret.name);
+      await createOrRotateSecret(url, guid, playbookKey, {
+        name: secret.name,
+        value: secret.value,
+        existing: stored.has(secret.name),
+      });
+      console.log(`${stored.has(secret.name) ? "Rotated" : "Stored"} ${secret.name}.`);
+    }
+
+    const configBySource = new Map(inventory.mcpConfigs.map((config) => [config.source, config]));
+    for (const requested of requestedRewrites) {
+      const affected = plan.secrets
+        .flatMap((secret) => secret.occurrences.map((occurrence) => ({ ...occurrence, name: secret.name })))
+        .filter((occurrence) => occurrence.source === requested);
+      if (affected.length === 0) {
+        console.log(`No adoptable value in '${requested}'; nothing rewritten.`);
+        continue;
+      }
+      if (affected.some((occurrence) => occurrence.expansion === "unsupported")) {
+        console.log(`Refusing to rewrite ${requested}: this client's configuration format is not rewritten yet.`);
+        continue;
+      }
+      const config = configBySource.get(requested);
+      const content = rewriteConfig(
+        await readConfigForRewrite(config.absolutePath),
+        affected[0].format,
+        affected,
+        affected.map((occurrence) => occurrence.name),
+      );
+      if (content === null) {
+        console.log(`Could not rewrite ${requested} safely; left unchanged.`);
+        continue;
+      }
+      await applyRewrite(config.absolutePath, content);
+      console.log(`Rewrote ${requested} to reference ${affected.map((item) => `\${${item.name}}`).join(", ")}.`);
+    }
+
+    console.log("");
+    console.log("The values are in the vault. Rotate them: they were on disk in plain text, so");
+    console.log("they may also be in git history, shell history, and editor backups.");
+    if (requestedRewrites.length > 0) {
+      console.log("Provide them at runtime without writing them anywhere:");
+      console.log("  apb secrets run -- <your client>");
+    }
+    return;
+  }
+
   if (subcommand === "run") {
     const manifestSecrets = await readManifestSecrets(root);
     const names = manifestSecrets.map((secret) => secret.name);
@@ -264,7 +407,7 @@ async function runSecrets(url, flags, positional, rest) {
     return;
   }
 
-  throw new Error("Usage: agentplaybooks secrets <login|status|push|run> ...");
+  throw new Error("Usage: agentplaybooks secrets <login|status|push|run|adopt> ...");
 }
 
 export async function run(args) {
@@ -276,7 +419,7 @@ export async function run(args) {
 
   if (command === "doctor") {
     const report = flags.has("--global")
-      ? await runGlobalDoctor()
+      ? await runGlobalDoctor({ includeVendored: flags.has("--include-vendored") })
       : await runDoctor(path.resolve(positional[0] ?? process.cwd()));
     if (flags.has("--json")) console.log(JSON.stringify(publicReport(report), null, 2));
     else printDoctor(report);
@@ -287,11 +430,13 @@ export async function run(args) {
   }
 
   if (command === "sync") {
-    if (flags.has("--global")) throw new Error("Global sync is not supported yet.");
     const requestedTargets = typeof flags.get("--target") === "string"
       ? flags.get("--target").split(",").map((value) => value.trim()).filter(Boolean)
       : [];
-    const plan = await planSync(path.resolve(positional[0] ?? process.cwd()), { targets: requestedTargets });
+    const options = { targets: requestedTargets, includeVendored: flags.has("--include-vendored") };
+    const plan = flags.has("--global")
+      ? await planGlobalSync(options)
+      : await planSync(path.resolve(positional[0] ?? process.cwd()), options);
     if (flags.has("--json")) {
       console.log(JSON.stringify({
         action: plan.action,
@@ -386,9 +531,12 @@ export async function run(args) {
   }
 
   if (command === "push") {
-    const root = path.resolve(positional[0] ?? process.cwd());
+    const global = flags.has("--global");
+    const root = global ? os.homedir() : path.resolve(positional[0] ?? process.cwd());
     const apiKey = await requireApiKey(url);
-    const plan = await planPush(root, { url, apiKey });
+    const plan = global
+      ? await planGlobalPush({ url, apiKey, includeVendored: flags.has("--include-vendored") })
+      : await planPush(root, { url, apiKey });
     if (flags.has("--json")) {
       console.log(JSON.stringify({
         remote: plan.remote,
@@ -396,6 +544,9 @@ export async function run(args) {
         conflicts: plan.conflicts,
       }, null, 2));
     } else {
+      if (plan.scope === "global") {
+        console.log("Scope: this machine's own skills. MCP configuration is not uploaded — a home-scoped MCP config is where auth headers live.");
+      }
       console.log(plan.remote
         ? `Push plan for linked playbook '${plan.remote.name}' (${plan.remote.guid}):`
         : "Push plan (a new remote playbook will be created):");

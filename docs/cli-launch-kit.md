@@ -35,14 +35,14 @@ above.
 ## X (280 characters)
 
 > Your agent skills live in 5 different folders. `.claude/skills`,
-> `.cursor/skills`, `.codex/skills`, `.agents/skills`, `~/.hermes/skills`.
+> `.cursor/skills`, `.codex/skills`, `.agents/skills`, `~/.hermes`.
 >
 > Write once, run `apb sync --apply`, they're everywhere. Plans first, never
 > overwrites, backs up.
 >
 > Open source: apbks.com/docs/cli
 
-Measured at 263 characters with the link counted as X's fixed 23, so it fits
+Measured at 256 characters with the link counted as X's fixed 23, so it fits
 the 280 limit as written. If you edit it, recount — cutting the folder list to
 three entries plus "…and more" buys the most room.
 
@@ -73,7 +73,7 @@ three entries plus "…and more" buys the most room.
 > Every AI coding tool invented its own folder. Claude Code reads
 > `.claude/skills` and `.mcp.json`. Cursor wants `.cursor/mcp.json`. Codex uses
 > `.codex/skills` and a TOML config. Google Antigravity reads `.agents/skills`.
-> Hermes Agent keeps skills in the home directory.
+> Hermes Agent keeps everything in one home-scoped profile.
 >
 > So teams do what teams do: copy the file, edit one of the copies, forget the
 > other, and three weeks later two agents behave differently for reasons nobody
@@ -89,9 +89,9 @@ three entries plus "…and more" buys the most room.
 >
 > **`agentplaybooks sync`** — normalizes everything into one portable manifest,
 > then writes what each enabled target is missing. Five platforms today: Claude
-> Code and Claude Cowork, Cursor, ChatGPT/Codex, Google Antigravity, and Nous
-> Hermes Agent. MCP definitions are translated between JSON and Codex's TOML
-> automatically.
+> Code and Claude Cowork, Cursor, ChatGPT/Codex, Google Antigravity, and Hermes
+> Agent. MCP definitions are translated between JSON, Codex's TOML, and Hermes'
+> YAML automatically.
 >
 > **`push` / `pull`** — move skills, MCP servers, and the manifest between a
 > project and a hosted playbook. Your teammate pulls it and syncs into whichever

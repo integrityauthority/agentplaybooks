@@ -6,8 +6,8 @@ export async function runDoctor(target) {
   return analyze(inventory);
 }
 
-export async function runGlobalDoctor() {
-  return analyze(await discoverGlobal());
+export async function runGlobalDoctor(options = {}) {
+  return analyze(await discoverGlobal(options));
 }
 
 export function publicReport(report) {

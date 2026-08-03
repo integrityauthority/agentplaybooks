@@ -30,7 +30,7 @@ manifestbe normalizálja, majd targetenként pótolja a hiányokat:
 | Cursor | `.cursor/skills/` | `.cursor/mcp.json` |
 | ChatGPT / OpenAI Codex | `.codex/skills/` | `.codex/config.toml` |
 | Google Antigravity | `.agents/skills/` | — |
-| Nous Hermes Agent | `~/.hermes/skills/` | — |
+| Hermes Agent (Nous Research) | `.agents/skills/` (regisztrálva a `~/.hermes/config.yaml`-ban) | `~/.hermes/config.yaml` |
 
 Írd meg a skillt egyszer Claude Code-ban, futtasd az `apb sync --apply`-t, és
 megjelenik Cursorban, Codexben és Antigravityben is — az MCP-szerver

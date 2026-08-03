@@ -30,7 +30,7 @@ den Workflow also für Sie ausführen.
 | Cursor | `.cursor/skills/` | `.cursor/mcp.json` |
 | ChatGPT / OpenAI Codex | `.codex/skills/` | `.codex/config.toml` |
 | Google Antigravity | `.agents/skills/` | — |
-| Nous Hermes Agent | `~/.hermes/skills/` | — |
+| Hermes Agent (Nous Research) | `.agents/skills/` (registriert in `~/.hermes/config.yaml`) | `~/.hermes/config.yaml` |
 
 Schreiben Sie einen Skill einmal in Claude Code, führen Sie
 `apb sync --apply` aus, und er erscheint auch in Cursor, Codex und

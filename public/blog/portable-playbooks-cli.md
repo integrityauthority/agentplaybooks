@@ -29,7 +29,7 @@ manifest, then fills the gaps per target:
 | Cursor | `.cursor/skills/` | `.cursor/mcp.json` |
 | ChatGPT / OpenAI Codex | `.codex/skills/` | `.codex/config.toml` |
 | Google Antigravity | `.agents/skills/` | — |
-| Nous Hermes Agent | `~/.hermes/skills/` | — |
+| Hermes Agent (Nous Research) | `.agents/skills/` (registered in `~/.hermes/config.yaml`) | `~/.hermes/config.yaml` |
 
 Write a skill once in Claude Code, run `apb sync --apply`, and it shows up in
 Cursor, Codex, and Antigravity too — including your MCP server definitions,

@@ -13,8 +13,11 @@ playbook on agentplaybooks.ai).
 
 A hosted playbook keeps two different things apart: the **persona** is who the
 agent is (identity, portable between projects), while **instructions** are the
-always-on rules of one project (`AGENTS.md` / `CLAUDE.md` content). The CLI syncs
-instructions; it never touches the persona.
+always-on rules of one project (`AGENTS.md` / `CLAUDE.md` content). `pull` writes
+instructions to `AGENTS.md` and the persona to `.agents/persona.md`; `push` sends
+instructions only — the hosted playbook owns the persona. From the portable store,
+`sync` hands the persona to targets that have a place for an identity: Hermes
+reads it as `SOUL.md`.
 
 ## Locating the CLI
 
@@ -34,10 +37,13 @@ Substitute your variant for `apb` in the commands below.
 | `apb sync [path]` | Plan the canonical `agentplaybook.json` plus platform files missing from enabled targets (claude, cursor, codex, antigravity, hermes) | Plan only |
 | `apb sync [path] --apply` | Write the manifest and missing platform files, with backups under `.agentplaybooks/backups/` | Yes |
 | `apb sync [path] --target=<types>` | Also enable targets the project does not have yet, e.g. `--target=claude,codex` | Plan only without `--apply` |
+| `apb sync --global [--include-vendored]` | Same plan across the user's home stores (`~/.cursor/skills`, `~/.claude/skills`, the Hermes profile) instead of one project. Skills only | Plan only without `--apply` |
 | `apb login [--url=<base>]` | Store a user API key (`apb_...`) for a remote; reads `AGENTPLAYBOOKS_API_KEY` first | `~/.agentplaybooks/credentials.json` |
 | `apb playbooks [--json]` | List remote playbooks the key can access | Never |
 | `apb pull <id\|guid> [path] [--apply]` | Download a playbook's instructions into `AGENTS.md`, skills into `.agents/skills/`, and MCP servers into `.agents/mcp.json`, then link the project | With `--apply` |
 | `apb push [path] [--apply]` | Upload local instructions, skills, MCP servers, and the manifest to the linked (or a new) remote playbook | With `--apply` |
+| `apb push --global [--apply]` | Upload this machine's own skills as a workstation playbook. MCP configuration is never uploaded | With `--apply` |
+| `apb secrets adopt [--global] [--apply] [--rewrite=<files>]` | Store a credential that is already hard-coded in an MCP config into the vault; rewrites the file to `${VAR}` only for files named in `--rewrite` | With `--apply` |
 
 ## Typical workflows
 
@@ -48,12 +54,23 @@ Substitute your variant for `apb` in the commands below.
   `--apply`. Target file mapping: claude → `.claude/skills` + `.mcp.json`;
   cursor → `.cursor/skills` + `.cursor/mcp.json`; codex → `.codex/skills` +
   `.codex/config.toml`; antigravity → `.agents/skills` (portable store);
-  hermes → `~/.hermes/skills` (home-scoped).
+  hermes → `.agents/skills` registered under `skills.external_dirs` in
+  `~/.hermes/config.yaml` (or `$HERMES_HOME`), MCP servers merged into the same
+  file, persona written to `SOUL.md`.
 - **"Share this project's setup with my team"** → `apb login`, then `apb push`
   (review the plan), then `apb push --apply`. Give the team the playbook GUID;
   they run `apb pull <guid> --apply` followed by
   `apb sync --target=<their tools> --apply`. Skills and MCP servers both make
   the trip.
+- **"My skills are scattered across my tools, not in a project"** → this is the
+  global case: `apb sync --global --target=<their tools>`, show the plan, then
+  `--apply`. It moves **skills only**, on purpose: a global MCP config holds
+  credentials (an auth header, a token), and copying it into two more files
+  would spread the secret rather than fix it. Report MCP drift from
+  `apb doctor --global` instead. Skills a client ships with itself (Cursor's
+  managed set, Hermes' bundle) are left out unless the user asks for
+  `--include-vendored` — syncing `update-cursor-settings` into Claude Code helps
+  nobody.
 - **"Set this machine up from our team playbook"** → `apb pull <guid> --apply`,
   then `apb sync --apply`. If the project has no target yet, sync lists the
   agent tools it detected for this user; pass them via `--target`.
@@ -89,6 +106,17 @@ Substitute your variant for `apb` in the commands below.
 - `apb secrets run -- <command>` injects values into one child process and
   writes nothing to disk. Prefer it over asking the user to export variables,
   and never suggest writing secrets into `.env`, `.mcp.json`, or a skill.
+- **`apb secrets adopt` is the way out of a credential that is already on disk.**
+  Planning is read-only and needs no vault key, so run it freely and report what
+  it found: names, files, key paths, lengths — it never prints a value. With
+  `--apply` the value goes to the vault and *no file changes*. Only a file the
+  user explicitly names in `--rewrite=<file>` gets its literal replaced with a
+  `${VAR}` reference — never offer to rewrite everything, and never rewrite a
+  client whose expansion support the plan reports as `unsupported`. After an
+  adopt, always say that the credential must be rotated: it was in plain text on
+  disk, so it may also be in git history, shell history, and editor backups.
+  Note that no backup of the original is written, deliberately — a backup would
+  be a second plaintext copy.
 - Secret values never belong in `agentplaybook.json` or in pushed content;
   only environment/vault references are allowed. `spec.secrets` records which
   variables the configuration references, never their values.
@@ -102,3 +130,11 @@ Substitute your variant for `apb` in the commands below.
   writes a `CLAUDE.md` that imports `AGENTS.md` instead of duplicating the text.
   Never resolve an instruction conflict by copying content between the two —
   make one import the other.
+- Hermes Agent loads only the **first** project context file it finds
+  (`.hermes.md` → `AGENTS.md` → `CLAUDE.md` → `.cursorrules`). If sync reports a
+  `.hermes.md` hiding `AGENTS.md`, say so plainly: the fix is to keep one file, or
+  to make `.hermes.md` point at `AGENTS.md`. Never silently duplicate the text.
+- A public playbook's skills are also installable straight from the web, with no
+  CLI involved:
+  `hermes skills install well-known:https://agentplaybooks.ai/playbooks/<guid>/.well-known/skills/<name>`.
+  Private and unlisted playbooks are not published there; use `pull` for those.

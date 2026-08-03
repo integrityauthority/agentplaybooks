@@ -42,13 +42,72 @@ target:
 | `cursor` — Cursor | `.cursor/skills/<name>/SKILL.md` | `.cursor/mcp.json` | — |
 | `codex` — ChatGPT / OpenAI Codex | `.codex/skills/<name>/SKILL.md` | `.codex/config.toml` | reads `AGENTS.md` natively |
 | `antigravity` — Google Antigravity | `.agents/skills/<name>/SKILL.md` | — (global config) | — |
-| `hermes` — Nous Hermes Agent | `~/.hermes/skills/<name>/SKILL.md` | — (global `config.yaml`) | reads `AGENTS.md` natively |
+| `hermes` — Hermes Agent (Nous Research) | `.agents/skills/<name>/SKILL.md`, registered in `~/.hermes/config.yaml` | `mcp_servers:` in `~/.hermes/config.yaml` | reads `AGENTS.md` natively; persona → `~/.hermes/SOUL.md` |
 
 Detected platforms are enabled automatically; `antigravity` and `hermes` are
 opt-in — add an entry to `spec.targets` in `agentplaybook.json`:
 
 ```json
 { "id": "codex", "type": "codex", "enabled": true, "config": {} }
+```
+
+### Syncing across tools instead of inside a project
+
+Most people's skills do not live in a project at all — they sit in
+`~/.cursor/skills`, `~/.claude/skills`, or a Hermes profile. `--global` plans the
+same fan-out across those home stores:
+
+```bash
+apb sync --global --target=claude,cursor,hermes        # plan
+apb sync --global --target=claude,cursor,hermes --apply
+```
+
+The portable store for the global scope is `~/.agents/skills`, and the manifest
+lives in `~/.agentplaybooks/agentplaybook.json` rather than in your home
+directory. Two deliberate limits:
+
+- **Skills only.** A global MCP config holds credentials — an auth header, a
+  token — and copying it into two more files on disk would spread the secret
+  instead of fixing it. Run `apb doctor --global` to see MCP drift between your
+  clients and decide what to do about it.
+- **Skills a client ships with itself are left out**: Cursor's managed set and
+  Hermes' bundled skills are the vendor's files, not your configuration. Pass
+  `--include-vendored` if you really want them (`apb doctor --global
+  --include-vendored` shows them too).
+
+### Publishing this machine as a playbook
+
+```bash
+apb login                    # once, per remote
+apb push --global            # plan
+apb push --global --apply    # create or update the workstation playbook
+```
+
+This uploads the machine's own skills, links `~/.agentplaybooks/remote.json` to
+that playbook, and leaves MCP configuration entirely local — a home-scoped MCP
+config is where auth headers live, and a playbook is something you share.
+
+### Adopting a credential that is already hard-coded
+
+```bash
+apb secrets adopt --global                                  # plan: read-only, no vault key needed
+apb secrets adopt --global --apply                          # store in the vault, change no file
+apb secrets adopt --global --apply --rewrite=.cursor/mcp.json  # also replace the literal with ${VAR}
+```
+
+The plan names every credential it found, the file and key path it sits in, its
+length, and whether that client is documented to expand `${VAR}` — never the
+value itself. `--apply` on its own only fills the vault: nothing on disk changes,
+so a configuration that works today keeps working. A literal is replaced only in
+a file you name explicitly.
+
+No backup of the original is written, on purpose: it would be a second plaintext
+copy of the credential. And once a value has been on disk it should be rotated —
+it may also be in git history, shell history, and editor backups. Afterwards the
+value can reach a client without ever being written down again:
+
+```bash
+apb secrets run -- claude        # or: hermes chat, codex, ...
 ```
 
 Safety rules:
@@ -183,7 +242,18 @@ workflow (plan first, apply after your approval).
 - **Google Antigravity**: reads project skills from `.agents/skills/`, which
   is exactly AgentPlaybooks' portable store — a pulled playbook is
   Antigravity-ready with no extra step.
-- **Hermes Agent**: has no project-scoped store, so the adapter writes to
-  `~/.hermes/skills/` (shown as a home-path in the plan); Hermes also reads
-  `AGENTS.md` instructions natively.
+- **Hermes Agent**: everything for one profile lives in `~/.hermes` (or
+  `$HERMES_HOME`). Rather than copying skills into that profile, sync registers
+  the portable store under `skills.external_dirs` in `~/.hermes/config.yaml`, so
+  Hermes reads them where they are — nothing is duplicated, and the next `pull`
+  is live without another sync. Hermes' own skills in `~/.hermes/skills/` keep
+  precedence on a name collision. MCP servers are merged into the same
+  `config.yaml` (comments and unrelated settings preserved), and a pulled
+  persona becomes `~/.hermes/SOUL.md` — never overwriting an existing one, since
+  Hermes seeds a default there on first run. Instructions are read from
+  `AGENTS.md` natively, but Hermes loads only the *first* project context file it
+  finds (`.hermes.md` → `AGENTS.md` → `CLAUDE.md` → `.cursorrules`), so a
+  `.hermes.md` that hides `AGENTS.md` is reported as a conflict.
+  Public playbook skills can also be installed straight from the web:
+  `hermes skills install well-known:https://agentplaybooks.ai/playbooks/<guid>/.well-known/skills/<name>`.
 - **Cursor**: skills in `.cursor/skills/`, MCP servers in `.cursor/mcp.json`.

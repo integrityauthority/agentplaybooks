@@ -48,8 +48,11 @@ function secretReferences(report) {
   return [...found].sort().map((name) => ({ name, ref: `env:${name}`, required: true }));
 }
 
-export function createManifest(report) {
-  const projectName = path.basename(report.inventory.root);
+export function createManifest(report, { displayName } = {}) {
+  // The directory name is the project's name. A machine-wide manifest has no
+  // project, so the caller passes what it should be called instead of the
+  // playbook being named after the user's home directory.
+  const projectName = displayName ?? path.basename(report.inventory.root);
   const platforms = new Set([
     ...report.inventory.instructions.map((item) => item.platform),
     ...report.inventory.skills.map((item) => item.platform),

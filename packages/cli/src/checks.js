@@ -3,12 +3,18 @@ import { isMap, parseDocument } from "yaml";
 import { digest, normalizePath } from "./discovery.js";
 
 const SKILL_NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-const PLACEHOLDER_PATTERN = /^(?:\$\{|\{\{|<|your[_-]|example|changeme|replace[_-]|env:|vault:|secret:)/i;
+// Values that are references, not credentials. Reading from the environment is
+// the behaviour this check exists to encourage, so an example that does it right
+// must not be reported as if it did it wrong.
+const PLACEHOLDER_PATTERN = /^(?:\$\{|\$[A-Za-z_]|\{\{|<|your[_-]|example|changeme|replace[_-]|env:|vault:|secret:|process\.env|import\.meta\.env|os\.environ|os\.getenv|System\.getenv|Deno\.env|getenv\(|ENV\[)/i;
 const CREDENTIAL_PATTERNS = [
   /\bsk-[a-zA-Z0-9_-]{20,}\b/,
   /\bgh[pousr]_[a-zA-Z0-9]{20,}\b/,
   /\bAKIA[0-9A-Z]{16}\b/,
-  /\b(?:api[_-]?key|access[_-]?token|auth[_-]?token|password|client[_-]?secret)\s*[=:]\s*["']?([^\s,"'}]+)/i,
+  // The keyword can be part of a longer name — a `X-MSSQL-Password-B64` header is
+  // exactly as much of a leak as a `password` field, and matching only the bare
+  // word missed it.
+  /(?:api[_-]?key|access[_-]?token|auth[_-]?token|password|passwd|client[_-]?secret)[A-Za-z0-9_-]*["']?\s*[=:]\s*["']?([^\s,"'}]+)/i,
 ];
 
 function finding(severity, code, message, source, details = {}) {
@@ -110,6 +116,27 @@ export function parseTomlServers(content) {
   return servers;
 }
 
+/**
+ * MCP servers as Hermes Agent spells them in `config.yaml`: a top-level
+ * `mcp_servers` mapping of name to definition. Returns null when the document
+ * cannot be parsed, so the caller can report that instead of an empty config.
+ */
+export function parseYamlServers(content) {
+  const document = parseDocument(content, { strict: false });
+  if (document.errors.length > 0) return null;
+  if (document.contents === null) return [];
+  if (!isMap(document.contents)) return null;
+  const collection = document.getIn(["mcp_servers"], true);
+  const servers = typeof collection?.toJSON === "function" ? collection.toJSON() : collection;
+  if (servers === undefined || servers === null) return [];
+  if (typeof servers !== "object" || Array.isArray(servers)) return null;
+  return Object.entries(servers).map(([name, definition]) => ({
+    name,
+    definition,
+    transport: transportFor(definition),
+  }));
+}
+
 export function analyze(inventory) {
   const findings = [];
   const skills = [];
@@ -155,10 +182,20 @@ export function analyze(inventory) {
     }
     if (frontmatter.values.metadata !== undefined) {
       const metadata = frontmatter.values.metadata;
-      const validMetadata = metadata && typeof metadata === "object" && !Array.isArray(metadata)
-        && Object.values(metadata).every((value) => typeof value === "string");
-      if (!validMetadata) {
+      const isMapping = metadata && typeof metadata === "object" && !Array.isArray(metadata);
+      const values = isMapping ? Object.values(metadata) : [];
+      // The spec asks for string values. A nested mapping or list is how clients
+      // namespace their own settings — `metadata.hermes.tags` is how Hermes Agent
+      // tags a skill — and other clients simply ignore it, so it is worth knowing
+      // about rather than worth failing a build over. A bare number or boolean is
+      // a different thing: almost always an unquoted value by mistake.
+      const namespaced = values.filter((value) => value !== null && typeof value === "object");
+      if (!isMapping) {
         findings.push(finding("high", "skill.metadata.invalid", "Skill metadata must map string keys to string values.", skill.source));
+      } else if (!values.every((value) => typeof value === "string" || namespaced.includes(value))) {
+        findings.push(finding("high", "skill.metadata.invalid", "Skill metadata must map string keys to string values.", skill.source));
+      } else if (namespaced.length > 0) {
+        findings.push(finding("low", "skill.metadata.nested", "Skill metadata nests a client-specific section. The Agent Skills spec asks for string values, so clients that do not know this extension will ignore it.", skill.source));
       }
     }
     if (frontmatter.values["allowed-tools"] !== undefined && typeof frontmatter.values["allowed-tools"] !== "string") {
@@ -182,6 +219,12 @@ export function analyze(inventory) {
     let parsedServers = [];
     if (config.source.toLowerCase().endsWith(".toml")) {
       parsedServers = parseTomlServers(config.content);
+    } else if (/\.ya?ml$/.test(config.source.toLowerCase())) {
+      parsedServers = parseYamlServers(config.content);
+      if (parsedServers === null) {
+        findings.push(finding("high", "mcp.config.invalid-yaml", "MCP configuration is not a YAML mapping with an 'mcp_servers' section.", config.source));
+        continue;
+      }
     } else {
       try {
         const parsed = JSON.parse(config.content);

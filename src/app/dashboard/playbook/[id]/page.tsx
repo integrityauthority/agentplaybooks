@@ -9,6 +9,7 @@ import { createBrowserClient } from "@/lib/supabase/client";
 import { authFetch } from "@/lib/auth-fetch";
 import { cn } from "@/lib/utils";
 import { createSupabaseAdapter } from "@/lib/storage";
+import { isSafeSkillFile, skillMarkdown } from "@/lib/skill-markdown";
 import {
   ArrowLeft,
   Brain,
@@ -36,7 +37,7 @@ import {
   FileText,
   ScrollText
 } from "lucide-react";
-import type { Playbook, Persona, Skill, MCPServer, PlaybookRun, Canvas, Memory, ApiKey } from "@/lib/supabase/types";
+import type { Playbook, Persona, Skill, SkillAttachment, MCPServer, PlaybookRun, Canvas, Memory, ApiKey } from "@/lib/supabase/types";
 import { ChatGPTIcon, ClaudeIcon, MarkdownIcon } from "@/components/ui/ai-icons";
 
 // Import editor components
@@ -732,9 +733,40 @@ export default function PlaybookEditorPage({ params }: { params: Promise<{ id: s
         zip.file("instructions/AGENTS.md", `${playbook.instructions.trim()}\n`);
       }
 
-      for (const skill of skillsExport) {
+      // Two shapes of the same skills, because they answer different questions.
+      // `skills/<name>.json` is the playbook's own record. `agent-skills/` is a
+      // ready-made Agent Skills tree (agentskills.io): copy a directory from it
+      // into .claude/skills, ~/.hermes/skills, or any other client's skill store
+      // and it works, no conversion step.
+      // Attachments are the `references/`, `scripts/`, and `assets/` files a skill
+      // links to, and they are loaded per skill rather than with the list. An
+      // Agent Skills tree without them would ship SKILL.md files pointing at
+      // documents that are not in the archive.
+      const attachmentsBySkill = new Map<string, SkillAttachment[]>(
+        await Promise.all(skills.map(async (skill): Promise<[string, SkillAttachment[]]> => {
+          const response = await authFetch(`${baseUrl}/api/manage/skills/${skill.id}/attachments`);
+          if (!response.ok) return [skill.id, []];
+          const data = await response.json().catch(() => null);
+          return [skill.id, Array.isArray(data) ? (data as SkillAttachment[]) : []];
+        })),
+      );
+
+      for (const skill of skills) {
         const baseName = (skill.name || "skill").toLowerCase().replace(/[^a-z0-9-_]+/g, "_");
-        zip.file(`skills/${baseName}.json`, JSON.stringify(skill, null, 2));
+        zip.file(`skills/${baseName}.json`, JSON.stringify({
+          name: skill.name,
+          description: skill.description,
+          content: skill.content,
+          licence: skill.licence,
+        }, null, 2));
+
+        const skillDocument = skillMarkdown(skill);
+        if (!skillDocument || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(skill.name)) continue;
+        zip.file(`agent-skills/${skill.name}/SKILL.md`, skillDocument);
+        for (const attachment of attachmentsBySkill.get(skill.id) ?? []) {
+          if (!isSafeSkillFile(attachment.filename) || typeof attachment.content !== "string") continue;
+          zip.file(`agent-skills/${skill.name}/${attachment.filename}`, attachment.content);
+        }
       }
 
       for (const canvas of canvases) {
@@ -771,6 +803,9 @@ export default function PlaybookEditorPage({ params }: { params: Promise<{ id: s
           "- agents.md: persona system prompt",
           "- skills.json: skill list (Anthropic tool spec compatible)",
           "- skills/: individual skills as JSON",
+          "- agent-skills/: the same skills as an Agent Skills tree (agentskills.io):",
+          "    <name>/SKILL.md plus any bundled files. Copy a directory straight into",
+          "    .claude/skills, .cursor/skills, ~/.hermes/skills, or any other client.",
           "- mcp-servers.json: MCP server entries for this playbook",
           "- runs.json: isolated workflow run metadata",
           "- canvas.json and canvas/: versioned markdown work documents",

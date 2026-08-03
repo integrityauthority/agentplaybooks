@@ -57,8 +57,9 @@ Sync is deliberately not blind two-way copying.
 
 The CLI implements local manifest planning with atomic writes, platform file
 generation for the `claude`, `cursor`, `codex` (ChatGPT), `antigravity`, and
-`hermes` targets (skills and MCP server definitions where the platform has a
-project-scoped location; conflicting definitions are reported and skipped),
+`hermes` targets (skills and MCP server definitions wherever the platform keeps
+them — a project directory, or a home-scoped profile in the case of Hermes;
+conflicting definitions are reported and skipped),
 and authenticated remote `pull`/`push` of project instructions, skills, MCP
 servers, and the manifest against the management API using user API keys. Three-way conflict resolution
 with recorded sync-state hashes will be added behind this same lifecycle.
@@ -182,3 +183,32 @@ robots, terminals, and spoken links can use the short domain.
 6. GitHub Action, health badge, and opt-in aggregate health index.
 7. ROS 2 inventory/validation adapter.
 8. Enterprise policies, approvals, signing, audit, and gateway deployment.
+
+## Backlog
+
+**Rewriting a credential in Codex's TOML config.** `secrets adopt --rewrite`
+replaces a hard-coded value with a `${VAR}` reference in JSON and YAML
+configurations. Codex's `.codex/config.toml` is deliberately left out, and the
+reason is not the file format: replacing one `key = "value"` on a single line,
+guarded to the double-quoted single-line form and refusing everything else, is a
+small and low-risk change. The blocker is that **it is undocumented whether the
+Codex CLI expands `${VAR}` in `config.toml` at all** — there is an open request
+for that documentation (openai/codex#7521), and the community does not agree on
+whether the syntax is `$VAR` or `${VAR}`, nor on whether expansion happens at
+config load or at server launch. Rewriting a config whose client may not expand
+the reference turns a working server into an authentication failure, which is
+exactly what the adopt design refuses to risk. Until the behaviour is confirmed
+on a real Codex install, Codex is covered by `apb secrets run -- codex`, which
+injects the value into that one process and changes no file.
+
+**Declarative secret inheritance.** `spec.governance.inherits[]` exists in the
+schema and nothing reads it. The vault is playbook-scoped, so a credential two
+playbooks both need has to be stored in both — or referenced through
+`apb secrets run --playbook=<baseline-guid>`, which works today but is a manual
+step. `inherits` would make a "workstation baseline" playbook a first-class
+parent instead.
+
+**Machine-scoped manifest in the secrets commands.** `apb sync --global` writes
+its manifest to `~/.agentplaybooks/agentplaybook.json`, but
+`readManifestSecrets` looks for `<root>/agentplaybook.json`, so
+`apb secrets status --global` does not see the machine's declared secrets yet.
