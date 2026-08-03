@@ -1,24 +1,48 @@
 import { access, mkdir, copyFile, readFile, rename, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { normalizePath, normalizeText } from "./discovery.js";
+import { isMap, parseDocument } from "yaml";
+import { expandConfiguredPath, hermesProfile, normalizePath, normalizeText } from "./discovery.js";
 
 // Platform adapters describe where a deployment target keeps its skills and
 // MCP server definitions.
 //
 // - `platforms` lists the inventory platform labels that count as "already on
 //   this target" (antigravity reads the portable .agents store).
-// - `home: true` targets live in the user's home directory (Hermes Agent has
-//   no project-scoped skill store); their destinations are checked on disk at
-//   plan time because they are outside the scanned project.
-// - `format` selects the MCP config writer. Codex uses TOML.
+// - `mcpPlatforms` does the same for MCP servers when a target reads skills and
+//   MCP servers from different places.
+// - `format` selects the MCP config writer. Codex uses TOML, Hermes YAML.
+// - `profile: true` targets keep their MCP servers and identity in a
+//   home-scoped profile directory instead of in the project.
 const TARGET_ADAPTERS = {
   claude: { platforms: ["claude"], skillsDir: ".claude/skills", mcpPath: ".mcp.json", format: "json" },
   cursor: { platforms: ["cursor"], skillsDir: ".cursor/skills", mcpPath: ".cursor/mcp.json", format: "json" },
   codex: { platforms: ["codex"], skillsDir: ".codex/skills", mcpPath: ".codex/config.toml", format: "toml" },
   antigravity: { platforms: ["antigravity", "portable"], skillsDir: ".agents/skills" },
-  hermes: { platforms: ["hermes"], skillsDir: ".hermes/skills", home: true },
+  // Hermes Agent reads skills from its profile (`~/.hermes/skills`) *and* from
+  // every directory listed under `skills.external_dirs` in its `config.yaml`.
+  // Registering the portable store beats copying into the profile: nothing is
+  // duplicated, the next `pull` is picked up without another sync, and Hermes'
+  // own local skills keep precedence on a name collision — which is the right
+  // order for a shared team playbook. MCP servers have no such indirection, so
+  // those are written into `config.yaml` itself.
+  hermes: {
+    platforms: ["hermes", "portable"],
+    mcpPlatforms: ["hermes"],
+    skillsDir: ".agents/skills",
+    profile: true,
+    format: "yaml",
+  },
 };
+
+// Hermes' `config.yaml` accepts these keys per server (stdio: command/args/env,
+// HTTP: url/headers). A definition carrying anything else is reported instead of
+// being written half-translated.
+const HERMES_SERVER_KEYS = new Set(["command", "args", "env", "url", "headers"]);
+
+// Where `pull` puts the playbook's persona, and where the hermes target copies
+// it from. Hermes loads `SOUL.md` as slot #1 of its system prompt.
+const PORTABLE_PERSONA_PATH = ".agents/persona.md";
 
 const SAFE_SKILL_NAME = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
 
@@ -50,15 +74,6 @@ function conflict(target, kind, name, reason, sources) {
   return { target, kind, name, reason, sources: sources.map(normalizePath) };
 }
 
-function absoluteFor(root, homedir, adapter, relativePath) {
-  const base = adapter.home ? homedir : root;
-  return path.join(base, ...relativePath.split("/"));
-}
-
-function displayPath(adapter, relativePath) {
-  return adapter.home ? `~/${relativePath}` : relativePath;
-}
-
 async function readIfExists(absolutePath) {
   try {
     return normalizeText(await readFile(absolutePath, "utf8"));
@@ -68,14 +83,22 @@ async function readIfExists(absolutePath) {
   }
 }
 
-async function skillActions(report, targetIds, conflicts, { root, homedir }) {
-  const actions = [];
+function groupByName(items) {
   const groups = new Map();
-  for (const skill of report.inventory.skills) {
-    const group = groups.get(skill.name) ?? [];
-    group.push(skill);
-    groups.set(skill.name, group);
+  for (const item of items) {
+    const group = groups.get(item.name) ?? [];
+    group.push(item);
+    groups.set(item.name, group);
   }
+  return groups;
+}
+
+function skillActions(report, targetIds, conflicts, { root }) {
+  const actions = [];
+  const groups = groupByName(report.inventory.skills);
+  // Two targets can share one store (antigravity and hermes both read
+  // `.agents/skills`), and the same file must not be planned twice.
+  const planned = new Set();
 
   for (const [name, variants] of groups) {
     const digests = new Set(variants.map((item) => item.digest));
@@ -92,23 +115,15 @@ async function skillActions(report, targetIds, conflicts, { root, homedir }) {
         continue;
       }
       const relativePath = `${adapter.skillsDir}/${name}/SKILL.md`;
-      const absolutePath = absoluteFor(root, homedir, adapter, relativePath);
-      // Home-scoped destinations are outside the scanned project, so check
-      // the file itself before planning a write.
-      if (adapter.home) {
-        const existing = await readIfExists(absolutePath);
-        if (existing === variants[0].content) continue;
-        if (existing !== null) {
-          conflicts.push(conflict(target, "skill", name, `Existing ${displayPath(adapter, relativePath)} differs; not overwritten.`, variants.map((item) => item.source)));
-          continue;
-        }
-      }
+      const absolutePath = path.join(root, ...relativePath.split("/"));
+      if (planned.has(absolutePath)) continue;
+      planned.add(absolutePath);
       actions.push({
         kind: "skill",
         target,
         name,
         action: "create",
-        path: displayPath(adapter, relativePath),
+        path: relativePath,
         absolutePath,
         content: variants[0].content,
         from: variants[0].source,
@@ -184,29 +199,36 @@ function mergedJsonContent(existingContent, additions, target, conflicts, mcpPat
   return { content: `${JSON.stringify(document, null, 2)}\n`, added: Object.keys(additions) };
 }
 
-function mcpActions(report, targetIds, conflicts, { root, homedir }) {
-  const actions = [];
-  const groups = new Map();
-  for (const server of report.inventory.mcpServers) {
-    const group = groups.get(server.name) ?? [];
-    group.push(server);
-    groups.set(server.name, group);
+/**
+ * The MCP servers this target is missing. A target that reads its skills and
+ * its MCP servers from different places (Hermes) declares `mcpPlatforms`
+ * separately: a server sitting in the portable store is not automatically
+ * visible to it the way a skill is.
+ */
+function mcpAdditionsFor(adapter, groups, target, conflicts) {
+  const platforms = adapter.mcpPlatforms ?? adapter.platforms;
+  const additions = {};
+  for (const [name, variants] of groups) {
+    if (variants.some((item) => platforms.includes(item.platform))) continue;
+    const canonical = new Set(variants.map((item) => canonicalJson(item.definition)));
+    if (canonical.size > 1) {
+      conflicts.push(conflict(target, "mcp", name, "MCP server definitions differ across platforms; resolve the drift before syncing.", variants.map((item) => item.source)));
+      continue;
+    }
+    additions[name] = variants[0].definition;
   }
+  return additions;
+}
+
+function mcpActions(report, targetIds, conflicts, { root }) {
+  const actions = [];
+  const groups = groupByName(report.inventory.mcpServers);
 
   for (const target of targetIds) {
     const adapter = TARGET_ADAPTERS[target];
     if (!adapter?.mcpPath) continue;
 
-    const additions = {};
-    for (const [name, variants] of groups) {
-      if (variants.some((item) => adapter.platforms.includes(item.platform))) continue;
-      const canonical = new Set(variants.map((item) => canonicalJson(item.definition)));
-      if (canonical.size > 1) {
-        conflicts.push(conflict(target, "mcp", name, "MCP server definitions differ across platforms; resolve the drift before syncing.", variants.map((item) => item.source)));
-        continue;
-      }
-      additions[name] = variants[0].definition;
-    }
+    const additions = mcpAdditionsFor(adapter, groups, target, conflicts);
     if (Object.keys(additions).length === 0) continue;
 
     const existing = report.inventory.mcpConfigs.find((config) => config.source === adapter.mcpPath);
@@ -221,12 +243,158 @@ function mcpActions(report, targetIds, conflicts, { root, homedir }) {
       target,
       name: adapter.mcpPath,
       action: existing ? "merge" : "create",
-      path: displayPath(adapter, adapter.mcpPath),
-      absolutePath: absoluteFor(root, homedir, adapter, adapter.mcpPath),
+      path: adapter.mcpPath,
+      absolutePath: path.join(root, ...adapter.mcpPath.split("/")),
       servers: merged.added.sort(),
       content: merged.content,
     });
   }
+  return actions;
+}
+
+// --- Hermes Agent profile ---------------------------------------------------
+
+function samePath(left, right) {
+  const a = path.resolve(left);
+  const b = path.resolve(right);
+  return process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b;
+}
+
+function unrepresentableServerKeys(definition) {
+  return Object.keys(definition ?? {}).filter((key) => !HERMES_SERVER_KEYS.has(key));
+}
+
+/**
+ * Just the connection: which process to run or which URL to call. Hermes keeps
+ * its own settings next to those (`connect_timeout`, `timeout`, `tools.include`,
+ * sampling), and a profile that has tuned them is not "a different server" — it
+ * is the same server, configured. Comparing the whole entry would report a
+ * conflict for every server the user has ever touched in Hermes.
+ */
+function connectionOnly(definition) {
+  return Object.fromEntries(
+    Object.entries(definition ?? {}).filter(([key]) => HERMES_SERVER_KEYS.has(key)),
+  );
+}
+
+/**
+ * Merge MCP servers and the portable skill store into Hermes' `config.yaml`.
+ * The document is edited rather than regenerated so comments, key order, and
+ * every unrelated setting survive; anything the merge cannot reason about is
+ * reported as a conflict instead of being overwritten.
+ */
+function mergedHermesConfig(existingContent, additions, externalDir, { conflicts, display, homedir, env }) {
+  const document = parseDocument(existingContent ?? "", { strict: true, uniqueKeys: true });
+  if (document.errors.length > 0 || (document.contents !== null && !isMap(document.contents))) {
+    conflicts.push(conflict("hermes", "hermes-config", display, `${display} is not a YAML mapping this tool can safely merge into; add the entries by hand.`, [display]));
+    return { content: null, servers: [], externalDirs: [] };
+  }
+  if (document.contents === null) document.contents = document.createNode({});
+
+  const servers = [];
+  for (const [name, definition] of Object.entries(additions)) {
+    const unrepresentable = unrepresentableServerKeys(definition);
+    if (unrepresentable.length > 0) {
+      conflicts.push(conflict("hermes", "mcp", name, `MCP server definition uses keys Hermes' config.yaml does not accept (${unrepresentable.join(", ")}); add it with 'hermes mcp add' instead.`, [display]));
+      continue;
+    }
+    const current = document.getIn(["mcp_servers", name], true);
+    if (current !== undefined) {
+      const currentValue = typeof current?.toJSON === "function" ? current.toJSON() : current;
+      if (canonicalJson(connectionOnly(currentValue)) !== canonicalJson(connectionOnly(definition))) {
+        conflicts.push(conflict("hermes", "mcp", name, `${display} already defines '${name}' with a different connection; not overwritten.`, [display]));
+      }
+      continue;
+    }
+    document.setIn(["mcp_servers", name], definition);
+    servers.push(name);
+  }
+
+  const externalDirs = [];
+  const configured = document.getIn(["skills", "external_dirs"], true);
+  const configuredList = configured === undefined
+    ? []
+    : (typeof configured?.toJSON === "function" ? configured.toJSON() : configured);
+  if (!Array.isArray(configuredList)) {
+    conflicts.push(conflict("hermes", "hermes-config", display, `skills.external_dirs in ${display} is not a list; add the skill directory by hand.`, [display]));
+  } else {
+    const store = normalizePath(externalDir);
+    const alreadyListed = configuredList.some((entry) => typeof entry === "string"
+      && samePath(expandConfiguredPath(entry, { homedir, env }), externalDir));
+    if (!alreadyListed) {
+      if (configured === undefined) document.setIn(["skills", "external_dirs"], [store]);
+      else document.addIn(["skills", "external_dirs"], store);
+      externalDirs.push(store);
+    }
+  }
+
+  if (servers.length === 0 && externalDirs.length === 0) return { content: null, servers, externalDirs };
+  const serialized = document.toString({ lineWidth: 0 });
+  return {
+    content: serialized.endsWith("\n") ? serialized : `${serialized}\n`,
+    servers: servers.sort(),
+    externalDirs,
+  };
+}
+
+/**
+ * Plan the two writes the hermes target needs in its profile directory: the
+ * `config.yaml` entries (MCP servers plus the portable skill store), and
+ * `SOUL.md` from the playbook's persona.
+ */
+async function hermesActions(report, targetIds, conflicts, { root, homedir, env, platform, skipMcp }) {
+  if (!targetIds.includes("hermes")) return [];
+  const profile = await hermesProfile({ homedir, env, platform });
+  const actions = [];
+
+  const configPath = path.join(profile.directory, "config.yaml");
+  const configDisplay = `${profile.display}/config.yaml`;
+  const existingConfig = await readIfExists(configPath);
+  const additions = skipMcp
+    ? {}
+    : mcpAdditionsFor(TARGET_ADAPTERS.hermes, groupByName(report.inventory.mcpServers), "hermes", conflicts);
+  const merged = mergedHermesConfig(existingConfig, additions, path.join(root, ".agents", "skills"), {
+    conflicts,
+    display: configDisplay,
+    homedir,
+    env,
+  });
+  if (merged.content !== null) {
+    actions.push({
+      kind: "hermes-config",
+      target: "hermes",
+      name: "config.yaml",
+      action: existingConfig === null ? "create" : "merge",
+      path: configDisplay,
+      absolutePath: configPath,
+      servers: merged.servers,
+      externalDirs: merged.externalDirs,
+      content: merged.content,
+    });
+  }
+
+  const persona = await readIfExists(path.join(root, ...PORTABLE_PERSONA_PATH.split("/")));
+  if (persona !== null && persona.trim().length > 0) {
+    const soulPath = path.join(profile.directory, "SOUL.md");
+    const soulDisplay = `${profile.display}/SOUL.md`;
+    const content = persona.endsWith("\n") ? persona : `${persona}\n`;
+    const current = await readIfExists(soulPath);
+    if (current === null) {
+      actions.push({
+        kind: "persona",
+        target: "hermes",
+        name: "SOUL.md",
+        action: "create",
+        path: soulDisplay,
+        absolutePath: soulPath,
+        content,
+        from: PORTABLE_PERSONA_PATH,
+      });
+    } else if (current !== content) {
+      conflicts.push(conflict("hermes", "persona", "SOUL.md", `${soulDisplay} differs from the playbook persona and was not overwritten. Hermes seeds a default SOUL.md on first run — delete it (or merge the two) and re-run.`, [PORTABLE_PERSONA_PATH]));
+    }
+  }
+
   return actions;
 }
 
@@ -237,7 +405,23 @@ function mcpActions(report, targetIds, conflicts, { root, homedir }) {
 const CLAUDE_IMPORT_LINE = "@AGENTS.md";
 const CLAUDE_BRIDGE_CONTENT = `# Project instructions\n\n${CLAUDE_IMPORT_LINE}\n`;
 
+// Hermes loads exactly one project context file — first match wins, in the
+// order `.hermes.md` → `AGENTS.md` → `CLAUDE.md` → `.cursorrules`. A project
+// that has both `.hermes.md` and `AGENTS.md` therefore ships instructions Hermes
+// will never read, which no amount of syncing can fix for the user.
+const HERMES_INSTRUCTION_SHADOWS = [".hermes.md", "HERMES.md"];
+
+function hermesInstructionConflicts(report, targetIds, conflicts) {
+  if (!targetIds.includes("hermes")) return;
+  const agents = report.inventory.instructions.find((item) => item.source === "AGENTS.md");
+  if (!agents) return;
+  const shadow = report.inventory.instructions.find((item) => HERMES_INSTRUCTION_SHADOWS.includes(item.source));
+  if (!shadow || shadow.content === agents.content) return;
+  conflicts.push(conflict("hermes", "instructions", shadow.source, `Hermes loads only the first project context file it finds, so ${shadow.source} hides AGENTS.md. Keep one of them, or make ${shadow.source} point at AGENTS.md.`, [shadow.source, "AGENTS.md"]));
+}
+
 async function instructionActions(report, targetIds, conflicts, { root }) {
+  hermesInstructionConflicts(report, targetIds, conflicts);
   if (!targetIds.includes("claude")) return [];
   const hasAgentsFile = report.inventory.instructions.some((item) => item.source === "AGENTS.md");
   if (!hasAgentsFile) return [];
@@ -268,11 +452,17 @@ async function instructionActions(report, targetIds, conflicts, { root }) {
  * targets when a project has none — for example right after `pull` on a new
  * machine, where the portable store is the only thing on disk.
  */
-export async function detectInstalledTargets(homedir = os.homedir()) {
+export async function detectInstalledTargets(homedir = os.homedir(), env = process.env, platform = process.platform) {
   const detected = [];
   for (const [type, marker] of Object.entries(TARGET_HOME_MARKERS)) {
+    // A Hermes profile lives wherever $HERMES_HOME points, or under
+    // %LOCALAPPDATA% on Windows, so `~/.hermes` may legitimately not exist on a
+    // machine that runs Hermes.
+    const directory = type === "hermes"
+      ? (await hermesProfile({ homedir, env, platform })).directory
+      : path.join(homedir, marker);
     try {
-      await access(path.join(homedir, marker));
+      await access(directory);
       detected.push(type);
     } catch {
       continue;
@@ -286,7 +476,12 @@ export async function detectInstalledTargets(homedir = os.homedir()) {
  * definitions are reported and skipped; nothing is ever silently overwritten
  * with a differing definition.
  */
-export async function planAdapters(report, targets, { homedir = os.homedir() } = {}) {
+export async function planAdapters(report, targets, {
+  homedir = os.homedir(),
+  env = process.env,
+  platform = process.platform,
+  skipMcp = false,
+} = {}) {
   const root = report.inventory.root;
   const targetIds = targets
     .filter((target) => target.enabled && TARGET_ADAPTERS[target.type])
@@ -294,8 +489,9 @@ export async function planAdapters(report, targets, { homedir = os.homedir() } =
   const conflicts = [];
   const actions = [
     ...await instructionActions(report, targetIds, conflicts, { root }),
-    ...await skillActions(report, targetIds, conflicts, { root, homedir }),
-    ...mcpActions(report, targetIds, conflicts, { root, homedir }),
+    ...skillActions(report, targetIds, conflicts, { root }),
+    ...(skipMcp ? [] : mcpActions(report, targetIds, conflicts, { root })),
+    ...await hermesActions(report, targetIds, conflicts, { root, homedir, env, platform, skipMcp }),
   ];
   actions.sort((a, b) => a.path.localeCompare(b.path));
   return { actions, conflicts };
@@ -308,13 +504,25 @@ async function atomicWrite(absolutePath, content) {
   await rename(tempPath, absolutePath);
 }
 
+// Backups live in one flat directory, so a display path becomes one filename.
+// `~/` and `$HERMES_HOME` are spelled out rather than dropped: two profiles can
+// hold the same relative path.
+function backupName(displayPath) {
+  return displayPath
+    .replace(/^~\//, "HOME/")
+    .replace(/^\$([A-Za-z_][A-Za-z0-9_]*)\//, "$1/")
+    .replace(/^%([A-Za-z_][A-Za-z0-9_]*)%\//, "$1/")
+    .split("/")
+    .join("__");
+}
+
 export async function applyAdapters(actions, backupDirectory) {
   const written = [];
   const backups = [];
   for (const action of actions) {
     if (action.action === "merge") {
       await mkdir(backupDirectory, { recursive: true, mode: 0o700 });
-      const backupPath = path.join(backupDirectory, action.path.replace(/^~\//, "HOME/").split("/").join("__"));
+      const backupPath = path.join(backupDirectory, backupName(action.path));
       await copyFile(action.absolutePath, backupPath);
       backups.push(backupPath);
     }

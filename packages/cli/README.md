@@ -28,7 +28,7 @@ insecure MCP URLs, cross-platform drift, and a 0-100 health score.
    | `cursor` | `.cursor/skills/<name>/SKILL.md` | `.cursor/mcp.json` | — |
    | `codex` (ChatGPT / Codex CLI) | `.codex/skills/<name>/SKILL.md` | `.codex/config.toml` | reads `AGENTS.md` |
    | `antigravity` (Google Antigravity) | `.agents/skills/<name>/SKILL.md` | — (global config only) | — |
-   | `hermes` (Nous Hermes Agent) | `~/.hermes/skills/<name>/SKILL.md` | — (global `config.yaml`) | reads `AGENTS.md` |
+   | `hermes` (Hermes Agent, Nous Research) | `.agents/skills/<name>/SKILL.md`, registered in `~/.hermes/config.yaml` | `mcp_servers:` in `~/.hermes/config.yaml` | reads `AGENTS.md`; persona → `~/.hermes/SOUL.md` |
 
    Claude Code reads `CLAUDE.md` and not `AGENTS.md`, but it supports `@`
    imports, so the `claude` target writes a `CLAUDE.md` containing `@AGENTS.md`
@@ -40,9 +40,14 @@ insecure MCP URLs, cross-platform drift, and a 0-100 health score.
    not have yet (which is what a freshly pulled playbook needs). When no target
    is enabled, `sync` lists the agent tools it detects for the current user
    instead of quietly doing nothing.
-   Antigravity reads project skills from the portable `.agents/skills/` store;
-   Hermes has no project-scoped store, so its adapter writes to the home
-   directory and also picks instructions up from `AGENTS.md` natively.
+   Antigravity reads project skills from the portable `.agents/skills/` store.
+   Hermes keeps one profile in `~/.hermes` (or `$HERMES_HOME`): sync registers
+   that same portable store under `skills.external_dirs` in its `config.yaml`
+   instead of copying skills into the profile, merges MCP servers into that
+   `config.yaml`, and writes a pulled persona to `SOUL.md`. Hermes reads
+   `AGENTS.md` natively, but only the first project context file it finds
+   (`.hermes.md` → `AGENTS.md` → `CLAUDE.md` → `.cursorrules`), so a `.hermes.md`
+   hiding `AGENTS.md` is reported.
    Same-named definitions with different content are reported as conflicts
    and skipped — never overwritten. Replaced files are backed up under
    `.agentplaybooks/backups/`.

@@ -43,7 +43,7 @@ habilitado:
 | `cursor` — Cursor | `.cursor/skills/<nombre>/SKILL.md` | `.cursor/mcp.json` | — |
 | `codex` — ChatGPT / OpenAI Codex | `.codex/skills/<nombre>/SKILL.md` | `.codex/config.toml` | lee `AGENTS.md` de forma nativa |
 | `antigravity` — Google Antigravity | `.agents/skills/<nombre>/SKILL.md` | — (config. global) | — |
-| `hermes` — Nous Hermes Agent | `~/.hermes/skills/<nombre>/SKILL.md` | — (`config.yaml` global) | lee `AGENTS.md` de forma nativa |
+| `hermes` — Hermes Agent (Nous Research) | `.agents/skills/<nombre>/SKILL.md`, registrado en `~/.hermes/config.yaml` | `mcp_servers:` en `~/.hermes/config.yaml` | lee `AGENTS.md` de forma nativa; persona → `~/.hermes/SOUL.md` |
 
 Las plataformas detectadas se habilitan automáticamente; `antigravity` y
 `hermes` son opcionales — añade una entrada a `spec.targets` en
@@ -200,8 +200,20 @@ aprobación).
 - **Google Antigravity**: lee los skills del proyecto desde `.agents/skills/`,
   exactamente el almacén portátil de AgentPlaybooks — un playbook descargado
   queda listo para Antigravity sin pasos extra.
-- **Hermes Agent**: no tiene almacén por proyecto, así que el adaptador
-  escribe en `~/.hermes/skills/` (visible como ruta home en el plan); Hermes
-  además lee las instrucciones `AGENTS.md` de forma nativa.
+- **Hermes Agent**: un perfil guarda todo en `~/.hermes` (o `$HERMES_HOME`). En
+  lugar de copiar los skills a ese perfil, sync registra el almacén portátil en
+  `skills.external_dirs` dentro de `~/.hermes/config.yaml` — Hermes los lee donde
+  ya están: sin duplicados, y el siguiente `pull` surte efecto sin otro sync. Si
+  coinciden los nombres, ganan los skills propios de Hermes en
+  `~/.hermes/skills/`. Los servidores MCP se fusionan en ese mismo `config.yaml`
+  (se conservan los comentarios y los ajustes ajenos), y una persona descargada
+  pasa a ser `~/.hermes/SOUL.md` — nunca se sobrescribe una existente, porque
+  Hermes crea una por defecto en el primer arranque. Las instrucciones se leen de
+  `AGENTS.md` de forma nativa, pero Hermes solo carga el *primer* archivo de
+  contexto que encuentra (`.hermes.md` → `AGENTS.md` → `CLAUDE.md` →
+  `.cursorrules`), así que un `.hermes.md` que oculte `AGENTS.md` se reporta como
+  conflicto. Los skills de un playbook público también se instalan directamente
+  desde la web:
+  `hermes skills install well-known:https://agentplaybooks.ai/playbooks/<guid>/.well-known/skills/<nombre>`.
 - **Cursor**: skills en `.cursor/skills/`, servidores MCP en
   `.cursor/mcp.json`.

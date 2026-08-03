@@ -6,6 +6,7 @@ import test from "node:test";
 import {
   applyPull,
   applyPush,
+  planGlobalPush,
   planPull,
   planPush,
   readLink,
@@ -143,6 +144,103 @@ test("pull plans remote skills into .agents/skills and apply writes them with a 
   const followUp = await planPull(root, "abc123", { url: URL_BASE, apiKey: API_KEY, fetchImpl });
   assert.equal(followUp.actions.length, 0);
   assert.equal(followUp.conflicts.length, 0);
+});
+
+test("global push uploads this machine's skills and never its MCP configuration", async () => {
+  const home = await fixture("agentplaybooks-global-push-");
+  await put(home, ".claude/skills/task-admin/SKILL.md", "---\nname: task-admin\ndescription: Log work items.\n---\nSteps.\n");
+  await put(home, ".cursor/skills/review/SKILL.md", "---\nname: review\ndescription: Review a diff.\n---\nSteps.\n");
+  // A home-scoped MCP config with a live credential in a header. Uploading it
+  // would put the credential in a playbook other people can be given access to.
+  await put(home, ".cursor/mcp.json", JSON.stringify({
+    mcpServers: { db: { url: "https://db.example.com/mcp", headers: { "X-Password": "plaintext-secret" } } },
+  }));
+  const { fetchImpl, calls } = fakeApi({ playbooks: [] });
+
+  const plan = await planGlobalPush({ url: URL_BASE, apiKey: API_KEY, fetchImpl, homedir: home });
+
+  assert.equal(plan.scope, "global");
+  assert.deepEqual(plan.skills.map((skill) => skill.name).sort(), ["review", "task-admin"]);
+  assert.deepEqual(plan.mcpServers, []);
+  assert.ok(!plan.actions.some((action) => action.kind === "mcp"));
+
+  const result = await applyPush(home, plan, { apiKey: API_KEY, fetchImpl });
+  const bodies = JSON.stringify(calls.map((call) => call.body));
+  assert.ok(!bodies.includes("plaintext-secret"));
+  // The machine is linked to its own playbook, in our own directory.
+  const link = await readLink(home);
+  assert.equal(link.guid, result.guid);
+});
+
+test("pull writes the playbook persona to the portable store, ignoring the API default", async () => {
+  const root = await fixture("agentplaybooks-pull-persona-");
+  const state = {
+    playbooks: [{
+      id: "11111111-2222-4333-8444-555555555555",
+      guid: "abc123",
+      name: "Team playbook",
+      config: {},
+      skills: [],
+      persona: { name: "Release manager", system_prompt: "You ship releases carefully." },
+    }],
+  };
+  const { fetchImpl } = fakeApi(state);
+
+  const plan = await planPull(root, "abc123", { url: URL_BASE, apiKey: API_KEY, fetchImpl });
+  const persona = plan.actions.find((action) => action.kind === "persona");
+  assert.equal(persona.path, ".agents/persona.md");
+
+  await applyPull(root, plan);
+  assert.equal(await readFile(path.join(root, ".agents", "persona.md"), "utf8"), "You ship releases carefully.\n");
+
+  // A playbook that never set a persona gets the API's stock sentence, which
+  // must not become an identity file.
+  const bare = await fixture("agentplaybooks-pull-persona-default-");
+  state.playbooks[0].persona = { name: "Assistant", system_prompt: "You are a helpful AI assistant." };
+  const barePlan = await planPull(bare, "abc123", { url: URL_BASE, apiKey: API_KEY, fetchImpl });
+  assert.equal(barePlan.actions.filter((action) => action.kind === "persona").length, 0);
+});
+
+test("pull preserves client-specific frontmatter on a remote skill", async () => {
+  const root = await fixture("agentplaybooks-pull-frontmatter-");
+  const state = {
+    playbooks: [{
+      id: "11111111-2222-4333-8444-555555555555",
+      guid: "abc123",
+      name: "Team playbook",
+      config: {},
+      skills: [{
+        id: "s1",
+        name: "deploy",
+        description: "Deploy the service.",
+        // A skill authored for Hermes Agent: fields outside the Agent Skills
+        // spec that only its own client understands.
+        content: `---
+name: deploy
+description: Deploy the service.
+version: 1.2.0
+platforms: [linux, macos]
+metadata:
+  hermes:
+    category: devops
+required_environment_variables:
+  - DEPLOY_TOKEN
+---
+Run the deploy script.
+`,
+      }],
+    }],
+  };
+  const { fetchImpl } = fakeApi(state);
+
+  const plan = await planPull(root, "abc123", { url: URL_BASE, apiKey: API_KEY, fetchImpl });
+  await applyPull(root, plan);
+
+  const written = await readFile(path.join(root, ".agents", "skills", "deploy", "SKILL.md"), "utf8");
+  assert.match(written, /version: 1\.2\.0/);
+  assert.match(written, /platforms:/);
+  assert.match(written, /category: devops/);
+  assert.match(written, /DEPLOY_TOKEN/);
 });
 
 test("pull emits valid YAML frontmatter for descriptions containing YAML punctuation", async () => {

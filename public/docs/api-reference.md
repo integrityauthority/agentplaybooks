@@ -1102,6 +1102,65 @@ GET /api/public/mcp/:id
 
 ---
 
+## Agent Skills Discovery (`.well-known/skills`)
+
+The [`.well-known/skills`](https://agentskills.io/specification) convention lets
+any agent client install skills straight from a website — no registry, no
+sign-up, no credential. Point a client at a base URL and it reads the index.
+
+```http
+GET /.well-known/skills/index.json
+GET /.well-known/skills/:name/SKILL.md
+GET /.well-known/skills/:name/:file
+```
+
+The same three routes exist per playbook, which is the form to hand a team: it
+publishes exactly that playbook's skills, with no chance of another publisher's
+name shadowing one of theirs.
+
+```http
+GET /playbooks/:guid/.well-known/skills/index.json
+GET /playbooks/:guid/.well-known/skills/:name/SKILL.md
+```
+
+**Index response:**
+
+```json
+{
+  "skills": [
+    {
+      "name": "code-review",
+      "description": "Review a diff for bugs. Use when a pull request needs review.",
+      "files": ["SKILL.md", "references/CHECKLIST.md"]
+    }
+  ]
+}
+```
+
+`SKILL.md` is served as `text/markdown` and is the complete document, including
+frontmatter fields outside the Agent Skills spec (`version`, `platforms`,
+`metadata.<client>.*`) exactly as the author wrote them. `files` lists what the
+skill bundles; each is fetched from `:name/:file` and is restricted to the spec's
+directories (`scripts/`, `references/`, `assets/`, `examples/`, `templates/`).
+
+Notes:
+
+- **Public playbooks only.** These routes are unauthenticated, so a private or
+  unlisted playbook is never published through them — use the CLI's `pull` for
+  those.
+- **Names are unique.** A skill name is a directory name, so the site-wide index
+  serves one skill per name (the most recent) rather than the same name twice.
+- Responses are cacheable (`max-age=300`) and CORS-enabled (`GET`, `OPTIONS`).
+
+**Example — installing into Hermes Agent:**
+
+```bash
+hermes skills search https://agentplaybooks.ai/playbooks/<guid> --source well-known
+hermes skills install well-known:https://agentplaybooks.ai/playbooks/<guid>/.well-known/skills/<name>
+```
+
+---
+
 ## Health Check
 
 ```http
