@@ -2,21 +2,30 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import { handle } from "hono/vercel";
 import { cors } from "hono/cors";
-import type { UserApiKeysRow, Playbook, Skill, MCPServer, ProfilesRow, Persona } from "@/lib/supabase/types";
+import type { Playbook, Skill, MCPServer, ProfilesRow, Persona } from "@/lib/supabase/types";
 import { ATTACHMENT_LIMITS, ALLOWED_FILE_TYPES } from "@/lib/supabase/types";
 import {
   validateAttachment,
   validateFilename,
   validateContent
 } from "@/lib/attachment-validator";
-import { hashApiKey, generateApiKey, generateGuid, getKeyPrefix } from "@/lib/utils";
-import { getAuthenticatedUser as getAuthenticatedUserFromRequest } from "@/app/api/_shared/auth";
+import { hashApiKey, generateApiKey, getKeyPrefix } from "@/lib/utils";
+import {
+  getAuthenticatedUser as getAuthenticatedUserFromRequest,
+  getUserFromAuthOrApiKey as getUserFromAuthOrApiKeyFromRequest,
+} from "@/app/api/_shared/auth";
 import { getServiceSupabase, getSupabase } from "@/app/api/_shared/supabase";
 import { checkPlaybookWriteAccess, getPlaybookAccessRole } from "@/app/api/_shared/guards";
 import { buildPlaybookUpdate } from "@/lib/playbook-access";
-
-// User API Key with user_id
-type UserApiKeyData = UserApiKeysRow & { user_id: string };
+import { validateAgentSkillDescription, validateAgentSkillName } from "@/lib/agent-skills";
+import { DEFAULT_USER_API_KEY_PERMISSIONS } from "@/lib/user-api-key-permissions";
+import {
+  createPlaybook,
+  listAccessiblePlaybooks,
+} from "@/lib/repositories/playbooks";
+import { projectPlaybookToolsForUser } from "@/app/api/_shared/playbook-tools";
+import { operationPathsFromTools } from "@/app/api/_shared/operation-openapi";
+import { ACCOUNT_TOOLS } from "@/app/api/_shared/account-tools";
 
 // Types
 type Bindings = {
@@ -128,63 +137,9 @@ function playbookToPersona(playbook: PersonaSource): Persona {
   };
 }
 
-// Helper: Validate User-level API key (works across all user's playbooks)
-async function validateUserApiKey(c: AppContext, requiredPermission: string): Promise<UserApiKeyData | null> {
-  const authHeader = c.req.header("Authorization");
-  if (!authHeader?.startsWith("Bearer apb_")) {
-    return null;
-  }
-
-  const apiKey = authHeader.replace("Bearer ", "");
-  const keyHash = await hashApiKey(apiKey);
-  const supabase = getServiceSupabase();
-
-  // First try user_api_keys table
-  const { data: userKeyData } = await supabase
-    .from("user_api_keys")
-    .select("*")
-    .eq("key_hash", keyHash)
-    .eq("is_active", true)
-    .single();
-
-  if (!userKeyData) {
-    return null;
-  }
-
-  // Check expiration
-  if (userKeyData.expires_at && new Date(userKeyData.expires_at) < new Date()) {
-    return null;
-  }
-
-  // Check permission
-  if (!userKeyData.permissions.includes(requiredPermission) && !userKeyData.permissions.includes("full")) {
-    return null;
-  }
-
-  // Update last_used_at
-  await supabase
-    .from("user_api_keys")
-    .update({ last_used_at: new Date().toISOString() })
-    .eq("id", userKeyData.id);
-
-  return userKeyData as UserApiKeyData;
-}
-
 // Helper: Get user from either JWT auth or User API key
 async function getUserFromAuthOrApiKey(c: AppContext, requiredPermission: string): Promise<{ id: string } | null> {
-  // Try JWT auth first
-  const user = await getAuthenticatedUser(c);
-  if (user) {
-    return user;
-  }
-
-  // Try User API key
-  const userApiKey = await validateUserApiKey(c, requiredPermission);
-  if (userApiKey) {
-    return { id: userApiKey.user_id };
-  }
-
-  return null;
+  return getUserFromAuthOrApiKeyFromRequest(c.req.raw, requiredPermission);
 }
 
 // ============================================
@@ -448,9 +403,10 @@ app.post("/playbooks/:id/skills", async (c) => {
   const body = await c.req.json();
   const { name, description, content, licence } = body;
 
-  if (!name) {
-    return c.json({ error: "Name is required" }, 400);
-  }
+  const nameError = validateAgentSkillName(name);
+  if (nameError) return c.json({ error: nameError }, 400);
+  const descriptionError = validateAgentSkillDescription(description);
+  if (descriptionError) return c.json({ error: descriptionError }, 400);
 
   const supabase = getServiceSupabase();
 
@@ -934,7 +890,7 @@ app.post("/user/api-keys", async (c) => {
       key_hash: keyHash,
       key_prefix: keyPrefix,
       name: name || null,
-      permissions: permissions || ["playbooks:read", "playbooks:write", "memory:read", "memory:write"],
+      permissions: permissions || DEFAULT_USER_API_KEY_PERMISSIONS,
       expires_at: expires_at || null,
       is_active: true,
     })
@@ -987,67 +943,15 @@ app.get("/manage/playbooks", async (c) => {
     return c.json({ error: "Unauthorized" }, 401);
   }
 
-  const supabase = getServiceSupabase();
-
-  const { data: ownedData, error } = await supabase
-    .from("playbooks")
-    .select(`
-      *,
-      skills:skills(count),
-      mcp_servers:mcp_servers(count),
-      memories:memories(count)
-    `)
-    .eq("user_id", user.id)
-    .order("updated_at", { ascending: false });
-
-  if (error) {
-    return c.json({ error: error.message }, 500);
+  try {
+    const playbooks = await listAccessiblePlaybooks(user.id);
+    return c.json(playbooks.map((playbook) => ({
+      ...playbook,
+      persona_count: playbook.persona_name ? 1 : 0,
+    })));
+  } catch (error) {
+    return c.json({ error: error instanceof Error ? error.message : "Failed to list playbooks" }, 500);
   }
-
-  const { data: memberships, error: membershipError } = await supabase
-    .from("playbook_collaborators")
-    .select("playbook_id")
-    .eq("user_id", user.id)
-    .not("accepted_at", "is", null);
-  if (membershipError) {
-    return c.json({ error: membershipError.message }, 500);
-  }
-
-  const sharedIds = (memberships || []).map((membership) => membership.playbook_id);
-  let sharedData: unknown[] = [];
-  if (sharedIds.length > 0) {
-    const sharedResult = await supabase
-      .from("playbooks")
-      .select(`
-        *,
-        skills:skills(count),
-        mcp_servers:mcp_servers(count),
-        memories:memories(count)
-      `)
-      .in("id", sharedIds)
-      .order("updated_at", { ascending: false });
-    if (sharedResult.error) return c.json({ error: sharedResult.error.message }, 500);
-    sharedData = sharedResult.data || [];
-  }
-
-  type PlaybookWithAllCounts = PlaybookWithCounts & { memories?: Array<{ count: number }> };
-  const ownedRows = (ownedData as unknown as PlaybookWithAllCounts[] | null) ?? [];
-  const sharedRows = (sharedData as PlaybookWithAllCounts[]) ?? [];
-  const playbooks = [...ownedRows.map((p) => ({ p, accessRole: "owner" as const })), ...sharedRows.map((p) => ({ p, accessRole: "editor" as const }))]
-    .sort((a, b) => new Date(b.p.updated_at).getTime() - new Date(a.p.updated_at).getTime())
-    .map(({ p, accessRole }) => ({
-    ...p,
-    current_user_role: accessRole,
-    persona_count: p.persona_name ? 1 : 0,
-    skill_count: p.skills?.[0]?.count || 0,
-    mcp_server_count: p.mcp_servers?.[0]?.count || 0,
-    memory_count: p.memories?.[0]?.count || 0,
-    skills: undefined,
-    mcp_servers: undefined,
-    memories: undefined,
-  }));
-
-  return c.json(playbooks);
 });
 
 // POST /api/manage/playbooks - Create playbook (User API key supported)
@@ -1080,9 +984,6 @@ app.post("/manage/playbooks", async (c) => {
     return c.json({ error: "Invalid instructions" }, 400);
   }
 
-  const supabase = getServiceSupabase();
-  const guid = generateGuid();
-
   // Determine visibility
   let visibilityValue = visibility;
   if (!visibilityValue && is_public !== undefined) {
@@ -1090,29 +991,22 @@ app.post("/manage/playbooks", async (c) => {
   }
   if (!visibilityValue) visibilityValue = 'private';
 
-  const { data, error } = await supabase
-    .from("playbooks")
-    .insert({
-      user_id: user.id,
-      guid,
+  try {
+    const data = await createPlaybook(user.id, {
       name,
       description: description || null,
       visibility: visibilityValue,
       config: config || {},
-      tags: tags || null,
+      tags: tags || [],
       persona_name,
       persona_system_prompt,
       persona_metadata: persona_metadata || {},
       instructions: instructions || null,
-    })
-    .select()
-    .single();
-
-  if (error) {
-    return c.json({ error: error.message }, 500);
+    });
+    return c.json(data, 201);
+  } catch (error) {
+    return c.json({ error: error instanceof Error ? error.message : "Failed to create playbook" }, 500);
   }
-
-  return c.json(data, 201);
 });
 
 // GET /api/manage/playbooks/:id - Get playbook details (User API key supported)
@@ -1351,9 +1245,10 @@ app.post("/manage/playbooks/:id/skills", async (c) => {
   const body = await c.req.json();
   const { name, description, content, licence } = body;
 
-  if (!name) {
-    return c.json({ error: "Name is required" }, 400);
-  }
+  const nameError = validateAgentSkillName(name);
+  if (nameError) return c.json({ error: nameError }, 400);
+  const descriptionError = validateAgentSkillDescription(description);
+  if (descriptionError) return c.json({ error: descriptionError }, 400);
 
   const supabase = getServiceSupabase();
 
@@ -1392,6 +1287,15 @@ app.put("/manage/playbooks/:id/skills/:sid", async (c) => {
 
   const body = await c.req.json();
   const supabase = getServiceSupabase();
+
+  if (body.name !== undefined) {
+    const nameError = validateAgentSkillName(body.name);
+    if (nameError) return c.json({ error: nameError }, 400);
+  }
+  if (body.description !== undefined) {
+    const descriptionError = validateAgentSkillDescription(body.description);
+    if (descriptionError) return c.json({ error: descriptionError }, 400);
+  }
 
   // Whitelist allowed fields to prevent mass-assignment
   const updateData: Record<string, unknown> = {};
@@ -2151,7 +2055,7 @@ app.get("/manage/openapi.json", (c) => {
               "application/json": {
                 schema: {
                   type: "object",
-                  required: ["name"],
+                  required: ["name", "description"],
                   properties: {
                     name: { type: "string", description: "Playbook name" },
                     description: { type: "string", description: "Playbook description" },
@@ -2269,7 +2173,7 @@ app.get("/manage/openapi.json", (c) => {
                   type: "object",
                   required: ["name"],
                   properties: {
-                    name: { type: "string", description: "Skill name (use snake_case)" },
+                    name: { type: "string", description: "Agent Skills-compatible name (lowercase kebab-case)" },
                     description: { type: "string", description: "What the skill does" },
                     definition: {
                       type: "object",
@@ -2396,7 +2300,11 @@ app.get("/manage/openapi.json", (c) => {
           ],
           responses: { "200": { description: "Memory deleted" } }
         }
-      }
+      },
+      ...operationPathsFromTools(
+        [...ACCOUNT_TOOLS, ...projectPlaybookToolsForUser()],
+        (tool) => `/control/${tool.name}`,
+      ),
     },
     components: {
       securitySchemes: {
@@ -2438,7 +2346,7 @@ app.get("/manage/openapi.json", (c) => {
           description: "A skill defines a capability or rule for solving tasks",
           properties: {
             id: { type: "string", format: "uuid" },
-            name: { type: "string", description: "Skill name (snake_case)" },
+            name: { type: "string", description: "Agent Skills-compatible name (lowercase kebab-case)" },
             description: { type: "string", description: "What this skill does" },
             definition: { type: "object", description: "Skill definition with parameters schema" },
             examples: { type: "array", description: "Example usages" },

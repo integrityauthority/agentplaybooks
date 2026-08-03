@@ -18,7 +18,7 @@ instructions; it never touches the persona.
 
 ## Locating the CLI
 
-The CLI is zero-dependency Node.js (>= 20). Try in this order:
+The CLI requires Node.js >= 20. Try in this order:
 
 1. Installed as a Claude Code plugin: `node "${CLAUDE_PLUGIN_ROOT}/bin/agentplaybooks.js"`
 2. Inside the AgentPlaybooks repository: `node packages/cli/bin/agentplaybooks.js`

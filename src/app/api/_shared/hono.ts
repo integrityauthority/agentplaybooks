@@ -44,7 +44,7 @@ export function createApiApp(basePath?: string) {
       return null as unknown as string;
     },
     allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowHeaders: ["Content-Type", "Authorization"],
+    allowHeaders: ["Content-Type", "Authorization", "MCP-Protocol-Version", "Mcp-Session-Id", "Last-Event-ID"],
     credentials: true,
     maxAge: 86400,
   }));

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { GET } from "@/app/api/mcp/[guid]/route";
 import { getSupabase, getServiceSupabase } from "@/app/api/_shared/supabase";
-import { validateApiKey } from "@/app/api/_shared/auth";
+import { canAccessPrivatePlaybook, validatePlaybookCredential } from "@/app/api/_shared/auth";
 
 /**
  * The public MCP manifest is the endpoint every MCP client hits first, and it
@@ -26,7 +26,8 @@ vi.mock("@/app/api/_shared/supabase", () => ({
 }));
 
 vi.mock("@/app/api/_shared/auth", () => ({
-  validateApiKey: vi.fn(),
+  canAccessPrivatePlaybook: vi.fn(),
+  validatePlaybookCredential: vi.fn(),
 }));
 
 vi.mock("@/lib/mcp/federation", () => ({
@@ -81,7 +82,8 @@ function stubClient(playbook: unknown, capture?: { select?: string }) {
 describe("GET /api/mcp/:guid — public manifest", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(validateApiKey).mockResolvedValue(null);
+    vi.mocked(canAccessPrivatePlaybook).mockResolvedValue(false);
+    vi.mocked(validatePlaybookCredential).mockResolvedValue(null);
   });
 
   it("serves a public playbook to an unauthenticated caller", async () => {
@@ -96,7 +98,7 @@ describe("GET /api/mcp/:guid — public manifest", () => {
 
     expect(res.status).toBe(200);
     // No credential was presented, so the anon path must have served this.
-    expect(validateApiKey).not.toHaveBeenCalled();
+    expect(canAccessPrivatePlaybook).not.toHaveBeenCalled();
   });
 
   it("reads the playbook through the anon client, not the service-role client", async () => {
@@ -174,12 +176,12 @@ describe("GET /api/mcp/:guid — public manifest", () => {
       stubClient(null) as unknown as ReturnType<typeof getSupabase>,
     );
     vi.mocked(getServiceSupabase).mockReturnValue(
-      stubClient(null) as unknown as ReturnType<typeof getServiceSupabase>,
+      stubClient({ ...publicPlaybook, guid: "private-guid", visibility: "private" }) as unknown as ReturnType<typeof getServiceSupabase>,
     );
 
     const res = await GET(new Request("http://localhost/api/mcp/private-guid"));
 
-    expect(validateApiKey).toHaveBeenCalled();
+    expect(canAccessPrivatePlaybook).toHaveBeenCalledWith(expect.any(Request), "playbook-1");
     expect(res.status).toBe(404);
   });
 });

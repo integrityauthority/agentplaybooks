@@ -3,8 +3,8 @@
 Launch only after the CLI is published to npm (or drop the `npm install` line
 and keep the repository instructions). Canonical URLs:
 
-- Blog: `https://apbks.com/blog/portable-playbooks-cli`
-- Documentation: `https://apbks.com/docs/cli`
+- Blog: `https://agentplaybooks.ai/blog/portable-playbooks-cli`
+- Documentation: `https://agentplaybooks.ai/docs/cli`
 - Repository: `https://github.com/integrityauthority/agentplaybooks`
 
 ## Positioning
@@ -117,8 +117,8 @@ three entries plus "…and more" buys the most room.
 > "audit my agent config", "make my Claude skills available in ChatGPT" — and
 > the agent runs the same safe workflow.
 >
-> Docs: https://apbks.com/docs/cli
-> Write-up: https://apbks.com/blog/portable-playbooks-cli
+> Docs: https://agentplaybooks.ai/docs/cli
+> Write-up: https://agentplaybooks.ai/blog/portable-playbooks-cli
 >
 > If you're running agents across more than one tool, I'd genuinely like to
 > know which platform adapter you need next.

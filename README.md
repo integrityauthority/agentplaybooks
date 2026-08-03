@@ -1,8 +1,10 @@
 # AgentPlaybooks
 
-Platform-independent memory and toolkit for AI agents.
+Vendor-neutral, platform-independent home for AI agent skills, tools, and memory.
 
-Give your AI agents, GPTs, and robots a platform-independent vault. Store skills, personas, and MCP servers, then move between AI platforms without losing anything.
+Keep your agents yours. AgentPlaybooks stores skills, personas, MCP servers, project instructions, and memory in one portable playbook, so you can switch platforms, use several at once, or self-host without vendor lock-in.
+
+Your agent setup stays in sync across Claude, ChatGPT, Cursor, Codex, Gemini, local models, and future platforms. The playbook is the portable source of truth—not any single vendor or editor.
 
 ## Highlights
 

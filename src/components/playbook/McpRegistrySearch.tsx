@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
+import type { RegistryServer } from "@/lib/mcp-registry";
 import {
   Search,
   Server,
@@ -15,29 +16,6 @@ import {
   CheckCircle2,
   X
 } from "lucide-react";
-
-interface RegistryServer {
-  registry_id: string;
-  name: string;
-  description: string;
-  version: string;
-  repository_url?: string;
-  website_url?: string;
-  icon_url?: string;
-  transport_type: string | null;
-  transport_config: Record<string, unknown>;
-  is_latest: boolean;
-  published_at: string;
-  updated_at: string;
-  source: string;
-  publisher: {
-    id: string;
-    display_name: string;
-    is_verified: boolean;
-    is_virtual: boolean;
-    website_url?: string;
-  };
-}
 
 interface McpRegistrySearchProps {
   onAdd: (server: RegistryServer) => Promise<void>;
@@ -65,10 +43,10 @@ export function McpRegistrySearch({ onAdd, onClose }: McpRegistrySearchProps) {
       });
       
       const response = await fetch(`/api/mcp-registry/search?${params}`);
-      const data = await response.json();
+      const data = await response.json().catch(() => null);
       
-      if (data.error) {
-        setError(data.error);
+      if (!response.ok || !data) {
+        setError(data?.error || `Registry search failed (HTTP ${response.status}).`);
         setServers([]);
       } else {
         setServers(data.servers || []);
@@ -82,12 +60,7 @@ export function McpRegistrySearch({ onAdd, onClose }: McpRegistrySearchProps) {
     }
   }, []);
 
-  // Initial load - fetch popular servers
-  useEffect(() => {
-    search("");
-  }, [search]);
-
-  // Debounced search
+  // Initial load and debounced search
   useEffect(() => {
     const timer = setTimeout(() => {
       search(query);
@@ -98,13 +71,16 @@ export function McpRegistrySearch({ onAdd, onClose }: McpRegistrySearchProps) {
 
   // Add server to playbook
   const handleAdd = async (server: RegistryServer) => {
+    if (!server.installable) return;
     setAdding(server.registry_id);
+    setError(null);
     
     try {
       await onAdd(server);
       setAddedIds(prev => new Set([...prev, server.registry_id]));
     } catch (e) {
       console.error("Add server error:", e);
+      setError(e instanceof Error ? e.message : "Failed to add MCP server.");
     } finally {
       setAdding(null);
     }
@@ -134,8 +110,8 @@ export function McpRegistrySearch({ onAdd, onClose }: McpRegistrySearchProps) {
                 <Globe className="h-5 w-5 text-amber-400" />
               </div>
               <div>
-                <h2 className="text-lg font-semibold text-white">Anthropic MCP Registry</h2>
-                <p className="text-sm text-slate-400">Browse official MCP servers</p>
+                <h2 className="text-lg font-semibold text-white">Official MCP Registry</h2>
+                <p className="text-sm text-slate-400">Browse community-published MCP servers</p>
               </div>
             </div>
             <button
@@ -235,10 +211,16 @@ export function McpRegistrySearch({ onAdd, onClose }: McpRegistrySearchProps) {
                         {server.publisher.is_verified && (
                           <span className="flex items-center gap-1 px-2 py-0.5 text-xs bg-amber-500/20 text-amber-400 rounded-full">
                             <ShieldCheck className="h-3 w-3" />
-                            Official
+                            Verified namespace
                           </span>
                         )}
                       </div>
+
+                      {server.qualified_name !== server.name && (
+                        <p className="mt-0.5 truncate font-mono text-xs text-slate-500">
+                          {server.qualified_name}
+                        </p>
+                      )}
                       
                       <p className="text-sm text-slate-400 mt-1 line-clamp-2">
                         {server.description}
@@ -249,6 +231,11 @@ export function McpRegistrySearch({ onAdd, onClose }: McpRegistrySearchProps) {
                           <span className="flex items-center gap-1">
                             <Package className="h-3 w-3" />
                             {server.transport_type.toUpperCase()}
+                          </span>
+                        )}
+                        {!server.installable && (
+                          <span className="text-amber-400" title={server.install_error}>
+                            Metadata only
                           </span>
                         )}
                         {server.repository_url && (
@@ -269,15 +256,20 @@ export function McpRegistrySearch({ onAdd, onClose }: McpRegistrySearchProps) {
                     {/* Add Button */}
                     <button
                       onClick={() => handleAdd(server)}
-                      disabled={adding === server.registry_id || addedIds.has(server.registry_id)}
+                      disabled={!server.installable || adding === server.registry_id || addedIds.has(server.registry_id)}
+                      title={!server.installable ? server.install_error : undefined}
                       className={cn(
                         "px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 shrink-0",
-                        addedIds.has(server.registry_id)
+                        !server.installable
+                          ? "bg-slate-700/50 text-slate-500 cursor-not-allowed"
+                          : addedIds.has(server.registry_id)
                           ? "bg-green-500/20 text-green-400 cursor-default"
                           : "bg-amber-500/20 text-amber-400 hover:bg-amber-500/30"
                       )}
                     >
-                      {adding === server.registry_id ? (
+                      {!server.installable ? (
+                        "Unavailable"
+                      ) : adding === server.registry_id ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
                       ) : addedIds.has(server.registry_id) ? (
                         <>

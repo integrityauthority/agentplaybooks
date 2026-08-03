@@ -23,6 +23,7 @@ import {
 import type { Skill, SkillAttachment, AttachmentFileType } from "@/lib/supabase/types";
 import { FILE_EXTENSION_MAP, ALLOWED_FILE_TYPES, ATTACHMENT_LIMITS } from "@/lib/supabase/types";
 import type { StorageAdapter } from "@/lib/storage";
+import { validateAgentSkillDescription, validateAgentSkillName } from "@/lib/agent-skills";
 
 interface SkillEditorProps {
   skill: Skill;
@@ -41,6 +42,7 @@ export function SkillEditor({ skill, storage, onUpdate, onDelete, readOnly = fal
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   // Determine if this is a content-based skill
   const hasContent = useMemo(() => {
@@ -201,6 +203,12 @@ export function SkillEditor({ skill, storage, onUpdate, onDelete, readOnly = fal
   }, [name, description, content, licence, skill]);
 
   const handleSave = useCallback(async () => {
+    const error = validateAgentSkillName(name) || validateAgentSkillDescription(description);
+    if (error) {
+      setValidationError(error);
+      return;
+    }
+    setValidationError(null);
     setSaving(true);
     try {
       const updated = await storage.updateSkill(skill.id, {
@@ -294,8 +302,11 @@ export function SkillEditor({ skill, storage, onUpdate, onDelete, readOnly = fal
                 "font-mono",
                 readOnly && "cursor-default"
               )}
-              placeholder="skill_name"
+              placeholder="skill-name"
             />
+            {validationError && (
+              <p className="px-2 text-xs text-red-500 dark:text-red-400">{validationError}</p>
+            )}
             <p className="text-sm text-neutral-500 dark:text-slate-500 truncate px-2">
               {hasContent ? (
                 <>

@@ -1,7 +1,7 @@
 {
   "common": {
     "appName": "AgentPlaybooks",
-    "tagline": "Platform-independent memory and toolkit for AI agents",
+    "tagline": "Vendor-neutral home for your AI agents",
     "getStarted": "Get Started",
     "signIn": "Sign In",
     "signUp": "Sign Up",
@@ -17,15 +17,15 @@
   },
   "landing": {
     "hero": {
-      "title": "Your AI's Universal Memory",
-      "subtitle": "Give your AI agents, GPTs, and robots a platform-independent vault. Store skills, personas, and MCP servers - switch between AI platforms without losing anything.",
+      "title": "Your Agents. Your Skills. Any Platform.",
+      "subtitle": "Keep personas, skills, MCP servers, project instructions, and memory in one vendor-neutral home. Switch platforms or use several at once without losing your setup.",
       "cta": "Explore Playbooks",
       "tryDemo": "Try Demo"
     },
     "whatIsPlaybook": {
       "title": "What is a Playbook?",
       "subtitle": "A Playbook is the complete operating environment for an AI agent - everything it needs to work effectively, all in one place.",
-      "description": "Think of it as an AI's \"work profile\" that travels with it across any platform.",
+      "description": "Think of it as your agent's portable work profile: a source of truth that travels with you across platforms and vendors.",
       "components": {
         "persona": {
           "title": "Persona",
@@ -80,7 +80,7 @@
       },
       "formats": {
         "title": "AI Platform Compatible",
-        "description": "Works with every major AI platform - OpenAI Actions, Anthropic MCP & Skills, Gemini Functions, and more"
+        "description": "Use standard formats across Claude, ChatGPT, Gemini, Cursor, Codex, local models, and more - without vendor lock-in"
       },
       "api": {
         "title": "API Key Access",

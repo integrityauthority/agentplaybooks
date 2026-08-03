@@ -1,7 +1,7 @@
 {
   "common": {
     "appName": "AgentPlaybooks",
-    "tagline": "Platformfüggetlen memória és eszköztár AI agenteknek",
+    "tagline": "Vendorfüggetlen otthon az AI agentjeidnek",
     "getStarted": "Kezdés",
     "signIn": "Bejelentkezés",
     "signUp": "Regisztráció",
@@ -17,8 +17,8 @@
   },
   "landing": {
     "hero": {
-      "title": "Az AI Univerzális Memóriája",
-      "subtitle": "Adj AI agentjeidnek, GPT-idnek és robotjaidnak egy platformfüggetlen tárhelyet. Tárold a skilleket, personákat és MCP szervereket - válts AI platformot anélkül, hogy bármit elveszítenél.",
+      "title": "A te agentjeid. A te skilljeid. Bármely platform.",
+      "subtitle": "Tartsd a personákat, skilleket, MCP szervereket, projektutasításokat és memóriát egy vendorfüggetlen tárhelyen. Válts platformot, vagy használj többet egyszerre a beállításaid elvesztése nélkül.",
       "cta": "Playbook-ok felfedezése",
       "tryDemo": "Próbáld ki"
     },

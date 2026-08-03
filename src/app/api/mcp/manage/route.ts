@@ -1,57 +1,28 @@
 import { handle } from "hono/vercel";
 import { createApiApp } from "@/app/api/_shared/hono";
 import { getServiceSupabase } from "@/app/api/_shared/supabase";
-import { hashApiKey, generateGuid } from "@/lib/utils";
 import type { UserApiKeysRow, Playbook } from "@/lib/supabase/types";
+import { validateUserApiKey } from "@/app/api/_shared/auth";
+import {
+  isPlaybookTool,
+  projectPlaybookToolsForUser,
+} from "@/app/api/_shared/playbook-tools";
+import { POST as handleScopedPlaybookMcpPost } from "@/app/api/mcp/[guid]/route";
+import { createPlaybook, listAccessiblePlaybooks } from "@/lib/repositories/playbooks";
+import { ACCOUNT_TOOLS } from "@/app/api/_shared/account-tools";
+import {
+  checkPlaybookOwnership,
+  checkPlaybookWriteAccess,
+  getPlaybookAccessRole,
+} from "@/app/api/_shared/guards";
 
 // MCP Server for Playbook Management
 // Allows AI agents to create and manage playbooks via User API Key
-
-type PlaybookWithCounts = Playbook & {
-  skills?: Array<{ count: number }>;
-  mcp_servers?: Array<{ count: number }>;
-};
 
 type PersonaSource = Pick<
   Playbook,
   "id" | "persona_name" | "persona_system_prompt" | "persona_metadata" | "created_at"
 >;
-
-// Validate User API Key
-async function validateUserApiKey(request: Request): Promise<UserApiKeysRow | null> {
-  const authHeader = request.headers.get("Authorization");
-  if (!authHeader?.startsWith("Bearer apb_")) {
-    return null;
-  }
-
-  const apiKey = authHeader.replace("Bearer ", "");
-  const keyHash = await hashApiKey(apiKey);
-  const supabase = getServiceSupabase();
-
-  const { data } = await supabase
-    .from("user_api_keys")
-    .select("*")
-    .eq("key_hash", keyHash)
-    .eq("is_active", true)
-    .single();
-
-  if (!data) {
-    return null;
-  }
-
-  // Check expiration
-  if (data.expires_at && new Date(data.expires_at) < new Date()) {
-    return null;
-  }
-
-  // Update last_used_at
-  await supabase
-    .from("user_api_keys")
-    .update({ last_used_at: new Date().toISOString() })
-    .eq("id", data.id);
-
-  return data;
-}
 
 // Check permission
 function hasPermission(userKey: UserApiKeysRow, permission: string): boolean {
@@ -70,241 +41,35 @@ function playbookToPersona(playbook: PersonaSource) {
   };
 }
 
-// MCP Tool definitions
 const MCP_TOOLS = [
-  {
-    name: "list_playbooks",
-    description: "List all playbooks owned by the authenticated user. Returns playbooks with their counts of personas, skills, and MCP servers.",
-    inputSchema: {
-      type: "object",
-      properties: {},
-    },
-  },
-  {
-    name: "create_playbook",
-    description: "Create a new playbook. A playbook is a container for personas (AI personalities), skills (capabilities), and memory (persistent storage).",
-    inputSchema: {
-      type: "object",
-      properties: {
-        name: { type: "string", description: "Name of the playbook" },
-        description: { type: "string", description: "Description of what the playbook is for" },
-        visibility: { type: "string", enum: ["public", "private", "unlisted"], description: "Visibility of the playbook", default: "private" },
-        instructions: { type: "string", description: "Always-on project instructions (the AGENTS.md / CLAUDE.md content). Separate from the persona: the persona is who the agent is, these are the rules of this project." },
-      },
-      required: ["name"],
-    },
-  },
-  {
-    name: "get_playbook",
-    description: "Get detailed information about a specific playbook including all personas, skills, and MCP servers.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        playbook_id: { type: "string", description: "UUID of the playbook" },
-      },
-      required: ["playbook_id"],
-    },
-  },
-  {
-    name: "update_playbook",
-    description: "Update a playbook's name, description, visibility, or project instructions.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        playbook_id: { type: "string", description: "UUID of the playbook" },
-        name: { type: "string", description: "New name" },
-        description: { type: "string", description: "New description" },
-        visibility: { type: "string", enum: ["public", "private", "unlisted"], description: "New visibility" },
-        instructions: { type: "string", description: "New always-on project instructions (the AGENTS.md / CLAUDE.md content)" },
-      },
-      required: ["playbook_id"],
-    },
-  },
-  {
-    name: "delete_playbook",
-    description: "Delete a playbook and all its contents (personas, skills, memory, API keys). This action cannot be undone!",
-    inputSchema: {
-      type: "object",
-      properties: {
-        playbook_id: { type: "string", description: "UUID of the playbook to delete" },
-      },
-      required: ["playbook_id"],
-    },
-  },
-  {
-    name: "create_persona",
-    description: "Add a persona (AI personality with system prompt) to a playbook.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        playbook_id: { type: "string", description: "UUID of the playbook" },
-        name: { type: "string", description: "Name of the persona" },
-        system_prompt: { type: "string", description: "The system prompt that defines this persona's behavior" },
-        metadata: { type: "object", description: "Optional metadata" },
-      },
-      required: ["playbook_id", "name", "system_prompt"],
-    },
-  },
-  {
-    name: "update_persona",
-    description: "Update a persona's name, system prompt, or metadata.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        playbook_id: { type: "string", description: "UUID of the playbook" },
-        persona_id: { type: "string", description: "UUID of the persona" },
-        name: { type: "string", description: "New name" },
-        system_prompt: { type: "string", description: "New system prompt" },
-        metadata: { type: "object", description: "New metadata" },
-      },
-      required: ["playbook_id", "persona_id"],
-    },
-  },
-  {
-    name: "delete_persona",
-    description: "Delete a persona from a playbook.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        playbook_id: { type: "string", description: "UUID of the playbook" },
-        persona_id: { type: "string", description: "UUID of the persona to delete" },
-      },
-      required: ["playbook_id", "persona_id"],
-    },
-  },
-  {
-    name: "create_skill",
-    description: "Add a skill (capability/tool definition) to a playbook. Skills define what the AI can do with input/output schemas.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        playbook_id: { type: "string", description: "UUID of the playbook" },
-        name: { type: "string", description: "Skill name (use snake_case, e.g., 'code_review')" },
-        description: { type: "string", description: "Description of what the skill does" },
-        content: { type: "string", description: "Full markdown content (SKILL.md body)" },
-        licence: { type: "string", description: "License information (e.g., MIT, Apache 2.0)" },
-      },
-      required: ["playbook_id", "name"],
-    },
-  },
-  {
-    name: "update_skill",
-    description: "Update a skill's name, description, definition, or examples.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        playbook_id: { type: "string", description: "UUID of the playbook" },
-        skill_id: { type: "string", description: "UUID of the skill" },
-        name: { type: "string", description: "New name" },
-        description: { type: "string", description: "New description" },
-        content: { type: "string", description: "New markdown content" },
-        licence: { type: "string", description: "New license" },
-      },
-      required: ["playbook_id", "skill_id"],
-    },
-  },
-  {
-    name: "delete_skill",
-    description: "Delete a skill from a playbook.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        playbook_id: { type: "string", description: "UUID of the playbook" },
-        skill_id: { type: "string", description: "UUID of the skill to delete" },
-      },
-      required: ["playbook_id", "skill_id"],
-    },
-  },
-  {
-    name: "list_skills",
-    description: "List all skills in a playbook. Skills define capabilities, rules, and how tasks should be solved.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        playbook_id: { type: "string", description: "UUID of the playbook" },
-      },
-      required: ["playbook_id"],
-    },
-  },
-  {
-    name: "get_skill",
-    description: "Get detailed information about a specific skill including its definition and examples.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        playbook_id: { type: "string", description: "UUID of the playbook" },
-        skill_id: { type: "string", description: "UUID of the skill" },
-      },
-      required: ["playbook_id", "skill_id"],
-    },
-  },
-  {
-    name: "read_memory",
-    description: "Read a specific memory entry by key.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        playbook_id: { type: "string", description: "UUID of the playbook" },
-        key: { type: "string", description: "Memory key to read" },
-      },
-      required: ["playbook_id", "key"],
-    },
-  },
-  {
-    name: "search_memory",
-    description: "Search memories by text and/or tags. Returns all matching entries.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        playbook_id: { type: "string", description: "UUID of the playbook" },
-        search: { type: "string", description: "Search in keys and descriptions" },
-        tags: { type: "array", items: { type: "string" }, description: "Filter by tags (any match)" },
-      },
-      required: ["playbook_id"],
-    },
-  },
-  {
-    name: "write_memory",
-    description: "Write a memory entry with optional tags and description. Tags help organize and search memories.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        playbook_id: { type: "string", description: "UUID of the playbook" },
-        key: { type: "string", description: "Memory key (unique identifier)" },
-        value: { type: "object", description: "Value to store (any JSON object)" },
-        tags: { type: "array", items: { type: "string" }, description: "Tags for categorization and search" },
-        description: { type: "string", description: "Human-readable description of this memory" },
-      },
-      required: ["playbook_id", "key", "value"],
-    },
-  },
-  {
-    name: "delete_memory",
-    description: "Delete a memory entry from a playbook.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        playbook_id: { type: "string", description: "UUID of the playbook" },
-        key: { type: "string", description: "Memory key to delete" },
-      },
-      required: ["playbook_id", "key"],
-    },
-  },
+  ...ACCOUNT_TOOLS,
+  ...projectPlaybookToolsForUser(),
 ];
 
 const app = createApiApp("/api/mcp/manage");
+const LATEST_PROTOCOL_VERSION = "2025-11-25";
+const SUPPORTED_PROTOCOL_VERSIONS = new Set([
+  "2024-11-05",
+  "2025-03-26",
+  "2025-06-18",
+  LATEST_PROTOCOL_VERSION,
+]);
 
 // GET /api/mcp/manage - Return MCP server manifest
 app.get("/", async (c) => {
+  if (c.req.header("Accept")?.includes("text/event-stream")) {
+    return c.body(null, 405, { Allow: "POST" });
+  }
   const userKey = await validateUserApiKey(c.req.raw);
 
   // Return manifest even without auth (for discovery)
   // But indicate that auth is required for tool execution
 
   const manifest = {
-    protocolVersion: "2024-11-05",
+    protocolVersion: LATEST_PROTOCOL_VERSION,
     serverInfo: {
-      name: "AgentPlaybooks Management",
+      name: "agentplaybooks-management",
+      title: "AgentPlaybooks Management",
       version: "1.0.0",
       description: "MCP server for managing AgentPlaybooks. Create, update, and delete playbooks, personas, skills, and memory. Requires User API Key authentication.",
     },
@@ -329,19 +94,37 @@ app.post("/", async (c) => {
 
   const body = await c.req.json();
   const { method, params, id } = body;
+  const protocolHeader = c.req.header("MCP-Protocol-Version");
+  if (protocolHeader && !SUPPORTED_PROTOCOL_VERSIONS.has(protocolHeader)) {
+    return c.json({ error: `Unsupported MCP protocol version: ${protocolHeader}` }, 400);
+  }
 
   // Handle MCP methods
   switch (method) {
     case "initialize":
+      const requestedVersion = params?.protocolVersion as string | undefined;
       return c.json({
         jsonrpc: "2.0",
         id,
         result: {
-          protocolVersion: "2024-11-05",
-          serverInfo: { name: "AgentPlaybooks Management", version: "1.0.0" },
+          protocolVersion: requestedVersion && SUPPORTED_PROTOCOL_VERSIONS.has(requestedVersion)
+            ? requestedVersion
+            : LATEST_PROTOCOL_VERSION,
+          serverInfo: {
+            name: "agentplaybooks-management",
+            title: "AgentPlaybooks Management",
+            version: "1.0.0",
+          },
           capabilities: { tools: {} },
+          instructions: "Manage the authenticated user's AgentPlaybooks, skills, MCP servers, and memory. Use an AgentPlaybooks user API key as a Bearer token.",
         },
       });
+
+    case "notifications/initialized":
+      return c.body(null, 202);
+
+    case "ping":
+      return c.json({ jsonrpc: "2.0", id, result: {} });
 
     case "tools/list":
       return c.json({
@@ -367,6 +150,48 @@ app.post("/", async (c) => {
       }
 
       try {
+        if (isPlaybookTool(toolName)) {
+          const playbookId = typeof args.playbook_id === "string" ? args.playbook_id : "";
+          if (!playbookId) {
+            return c.json({
+              jsonrpc: "2.0",
+              id,
+              error: { code: -32602, message: "playbook_id is required" },
+            });
+          }
+
+          const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(playbookId);
+          let playbookQuery = getServiceSupabase().from("playbooks").select("id, guid");
+          playbookQuery = isUuid
+            ? playbookQuery.eq("id", playbookId)
+            : playbookQuery.eq("guid", playbookId);
+          const { data: target } = await playbookQuery.maybeSingle();
+          if (!target) {
+            return c.json({
+              jsonrpc: "2.0",
+              id,
+              error: { code: -32001, message: "Playbook not found" },
+            });
+          }
+
+          const scopedArguments = { ...args };
+          delete scopedArguments.playbook_id;
+          const scopedUrl = new URL(c.req.raw.url);
+          scopedUrl.pathname = `/api/mcp/${encodeURIComponent(target.guid)}`;
+          const scopedRequest = new Request(scopedUrl, {
+            method: "POST",
+            headers: new Headers(c.req.raw.headers),
+            body: JSON.stringify({
+              jsonrpc: "2.0",
+              id,
+              method: "tools/call",
+              params: { name: toolName, arguments: scopedArguments },
+            }),
+          });
+
+          return handleScopedPlaybookMcpPost(scopedRequest);
+        }
+
         const result = await executeManagementTool(toolName, args, userKey);
         return c.json({
           jsonrpc: "2.0",
@@ -404,6 +229,7 @@ app.post("/", async (c) => {
 
 export const GET = handle(app);
 export const POST = handle(app);
+export const OPTIONS = handle(app);
 
 // Execute management tools
 async function executeManagementTool(
@@ -420,30 +246,10 @@ async function executeManagementTool(
         throw new Error("Permission denied: playbooks:read required");
       }
 
-      const { data, error } = await supabase
-        .from("playbooks")
-        .select(`
-          *,
-          skills:skills(count),
-          mcp_servers:mcp_servers(count)
-        `)
-        .eq("user_id", userId)
-        .order("updated_at", { ascending: false });
-
-      if (error) throw new Error(error.message);
-
-      const playbookRows = (data as unknown as PlaybookWithCounts[] | null) ?? [];
-      return playbookRows.map((p) => ({
-        id: p.id,
-        guid: p.guid,
-        name: p.name,
-        description: p.description,
-        visibility: p.visibility,
-        persona_count: p.persona_name ? 1 : 0,
-        skill_count: p.skills?.[0]?.count || 0,
-        mcp_server_count: p.mcp_servers?.[0]?.count || 0,
-        created_at: p.created_at,
-        updated_at: p.updated_at,
+      const playbooks = await listAccessiblePlaybooks(userId);
+      return playbooks.map((playbook) => ({
+        ...playbook,
+        persona_count: playbook.persona_name ? 1 : 0,
       }));
     }
 
@@ -452,33 +258,29 @@ async function executeManagementTool(
         throw new Error("Permission denied: playbooks:write required");
       }
 
-      const { name, description, visibility, instructions } = args as {
+      const { name, description, visibility, tags, persona_name, persona_system_prompt, persona_metadata, instructions } = args as {
         name: string;
         description?: string;
         visibility?: 'public' | 'private' | 'unlisted';
+        tags?: string[];
+        persona_name?: string;
+        persona_system_prompt?: string;
+        persona_metadata?: Record<string, unknown>;
         instructions?: string;
       };
 
       if (!name) throw new Error("name is required");
 
-      const guid = generateGuid();
-
-      const { data, error } = await supabase
-        .from("playbooks")
-        .insert({
-          user_id: userId,
-          guid,
-          name,
-          description: description || null,
-          visibility: visibility || 'private',
-          config: {},
-          instructions: instructions || null,
-        })
-        .select()
-        .single();
-
-      if (error) throw new Error(error.message);
-      return data;
+      return createPlaybook(userId, {
+        name,
+        description: description || null,
+        visibility: visibility || "private",
+        tags: tags || [],
+        persona_name: persona_name || null,
+        persona_system_prompt: persona_system_prompt || null,
+        persona_metadata: persona_metadata || {},
+        instructions: instructions || null,
+      });
     }
 
     case "get_playbook": {
@@ -489,11 +291,13 @@ async function executeManagementTool(
       const { playbook_id } = args as { playbook_id: string };
       if (!playbook_id) throw new Error("playbook_id is required");
 
+      const accessRole = await getPlaybookAccessRole(userId, playbook_id);
+      if (!accessRole) throw new Error("Playbook not found");
+
       const { data: playbook, error } = await supabase
         .from("playbooks")
         .select("*")
         .eq("id", playbook_id)
-        .eq("user_id", userId)
         .single();
 
       if (error || !playbook) throw new Error("Playbook not found");
@@ -506,6 +310,7 @@ async function executeManagementTool(
 
       return {
         ...playbook,
+        current_user_role: accessRole,
         // 1 playbook = 1 persona
         persona: playbookToPersona(playbook),
         personas: [playbookToPersona(playbook)], // backward-compatible shape
@@ -515,39 +320,6 @@ async function executeManagementTool(
       };
     }
 
-    case "update_playbook": {
-      if (!hasPermission(userKey, "playbooks:write")) {
-        throw new Error("Permission denied: playbooks:write required");
-      }
-
-      const { playbook_id, name, description, visibility, instructions } = args as {
-        playbook_id: string;
-        name?: string;
-        description?: string;
-        visibility?: 'public' | 'private' | 'unlisted';
-        instructions?: string;
-      };
-
-      if (!playbook_id) throw new Error("playbook_id is required");
-
-      const updateData: Record<string, unknown> = {};
-      if (name !== undefined) updateData.name = name;
-      if (description !== undefined) updateData.description = description;
-      if (visibility !== undefined) updateData.visibility = visibility;
-      if (instructions !== undefined) updateData.instructions = instructions;
-
-      const { data, error } = await supabase
-        .from("playbooks")
-        .update(updateData)
-        .eq("id", playbook_id)
-        .eq("user_id", userId)
-        .select()
-        .single();
-
-      if (error) throw new Error(error.message);
-      return data;
-    }
-
     case "delete_playbook": {
       if (!hasPermission(userKey, "playbooks:write")) {
         throw new Error("Permission denied: playbooks:write required");
@@ -555,12 +327,14 @@ async function executeManagementTool(
 
       const { playbook_id } = args as { playbook_id: string };
       if (!playbook_id) throw new Error("playbook_id is required");
+      if (!await checkPlaybookOwnership(userId, playbook_id)) {
+        throw new Error("Only the playbook owner can delete it");
+      }
 
       const { error } = await supabase
         .from("playbooks")
         .delete()
-        .eq("id", playbook_id)
-        .eq("user_id", userId);
+        .eq("id", playbook_id);
 
       if (error) throw new Error(error.message);
       return { success: true, message: "Playbook deleted" };
@@ -582,15 +356,7 @@ async function executeManagementTool(
       if (!name) throw new Error("name is required");
       if (!system_prompt) throw new Error("system_prompt is required");
 
-      // Verify ownership
-      const { data: playbook } = await supabase
-        .from("playbooks")
-        .select("id")
-        .eq("id", playbook_id)
-        .eq("user_id", userId)
-        .single();
-
-      if (!playbook) throw new Error("Playbook not found");
+      if (!await checkPlaybookWriteAccess(userId, playbook_id)) throw new Error("Playbook not found");
 
       const { data, error } = await supabase
         .from("playbooks")
@@ -600,7 +366,6 @@ async function executeManagementTool(
           persona_metadata: metadata || {},
         })
         .eq("id", playbook_id)
-        .eq("user_id", userId)
         .select("*")
         .single();
 
@@ -629,15 +394,7 @@ async function executeManagementTool(
         throw new Error("Invalid persona_id (persona is a singleton and uses playbook_id)");
       }
 
-      // Verify ownership
-      const { data: playbook } = await supabase
-        .from("playbooks")
-        .select("id")
-        .eq("id", playbook_id)
-        .eq("user_id", userId)
-        .single();
-
-      if (!playbook) throw new Error("Playbook not found");
+      if (!await checkPlaybookWriteAccess(userId, playbook_id)) throw new Error("Playbook not found");
 
       const updateData: Record<string, unknown> = {};
       if (updates.name !== undefined) updateData.persona_name = updates.name;
@@ -648,7 +405,6 @@ async function executeManagementTool(
         .from("playbooks")
         .update(updateData)
         .eq("id", playbook_id)
-        .eq("user_id", userId)
         .select("*")
         .single();
 
@@ -673,15 +429,7 @@ async function executeManagementTool(
         throw new Error("Invalid persona_id (persona is a singleton and uses playbook_id)");
       }
 
-      // Verify ownership
-      const { data: playbook } = await supabase
-        .from("playbooks")
-        .select("id")
-        .eq("id", playbook_id)
-        .eq("user_id", userId)
-        .single();
-
-      if (!playbook) throw new Error("Playbook not found");
+      if (!await checkPlaybookWriteAccess(userId, playbook_id)) throw new Error("Playbook not found");
 
       const { error } = await supabase
         .from("playbooks")
@@ -690,348 +438,7 @@ async function executeManagementTool(
           persona_system_prompt: "You are a helpful AI assistant.",
           persona_metadata: {},
         })
-        .eq("id", playbook_id)
-        .eq("user_id", userId);
-
-      if (error) throw new Error(error.message);
-      return { success: true };
-    }
-
-    case "create_skill": {
-      if (!hasPermission(userKey, "skills:write")) {
-        throw new Error("Permission denied: skills:write required");
-      }
-
-      const { playbook_id, name, description, content, licence } = args as {
-        playbook_id: string;
-        name: string;
-        description?: string;
-        content?: string;
-        licence?: string;
-      };
-
-      if (!playbook_id) throw new Error("playbook_id is required");
-      if (!name) throw new Error("name is required");
-
-      // Verify ownership
-      const { data: playbook } = await supabase
-        .from("playbooks")
-        .select("id")
-        .eq("id", playbook_id)
-        .eq("user_id", userId)
-        .single();
-
-      if (!playbook) throw new Error("Playbook not found");
-
-      const { data, error } = await supabase
-        .from("skills")
-        .insert({
-          playbook_id,
-          name,
-          description: description || null,
-          content: content || null,
-          licence: licence || null,
-        })
-        .select()
-        .single();
-
-      if (error) throw new Error(error.message);
-      return data;
-    }
-
-    case "update_skill": {
-      if (!hasPermission(userKey, "skills:write")) {
-        throw new Error("Permission denied: skills:write required");
-      }
-
-      const { playbook_id, skill_id, ...updates } = args as {
-        playbook_id: string;
-        skill_id: string;
-        name?: string;
-        description?: string;
-        content?: string;
-        licence?: string;
-      };
-
-      if (!playbook_id || !skill_id) {
-        throw new Error("playbook_id and skill_id are required");
-      }
-
-      // Verify ownership
-      const { data: playbook } = await supabase
-        .from("playbooks")
-        .select("id")
-        .eq("id", playbook_id)
-        .eq("user_id", userId)
-        .single();
-
-      if (!playbook) throw new Error("Playbook not found");
-
-      const { data, error } = await supabase
-        .from("skills")
-        .update(updates)
-        .eq("id", skill_id)
-        .eq("playbook_id", playbook_id)
-        .select()
-        .single();
-
-      if (error) throw new Error(error.message);
-      return data;
-    }
-
-    case "delete_skill": {
-      if (!hasPermission(userKey, "skills:write")) {
-        throw new Error("Permission denied: skills:write required");
-      }
-
-      const { playbook_id, skill_id } = args as {
-        playbook_id: string;
-        skill_id: string;
-      };
-
-      if (!playbook_id || !skill_id) {
-        throw new Error("playbook_id and skill_id are required");
-      }
-
-      // Verify ownership
-      const { data: playbook } = await supabase
-        .from("playbooks")
-        .select("id")
-        .eq("id", playbook_id)
-        .eq("user_id", userId)
-        .single();
-
-      if (!playbook) throw new Error("Playbook not found");
-
-      const { error } = await supabase
-        .from("skills")
-        .delete()
-        .eq("id", skill_id)
-        .eq("playbook_id", playbook_id);
-
-      if (error) throw new Error(error.message);
-      return { success: true };
-    }
-
-    case "list_skills": {
-      if (!hasPermission(userKey, "playbooks:read")) {
-        throw new Error("Permission denied: playbooks:read required");
-      }
-
-      const { playbook_id } = args as { playbook_id: string };
-      if (!playbook_id) throw new Error("playbook_id is required");
-
-      // Verify ownership
-      const { data: playbook } = await supabase
-        .from("playbooks")
-        .select("id")
-        .eq("id", playbook_id)
-        .eq("user_id", userId)
-        .single();
-
-      if (!playbook) throw new Error("Playbook not found");
-
-      const { data, error } = await supabase
-        .from("skills")
-        .select("id, name, description, content, licence, priority")
-        .eq("playbook_id", playbook_id)
-        .order("priority", { ascending: false });
-
-      if (error) throw new Error(error.message);
-      return data || [];
-    }
-
-    case "get_skill": {
-      if (!hasPermission(userKey, "playbooks:read")) {
-        throw new Error("Permission denied: playbooks:read required");
-      }
-
-      const { playbook_id, skill_id } = args as {
-        playbook_id: string;
-        skill_id: string;
-      };
-
-      if (!playbook_id || !skill_id) {
-        throw new Error("playbook_id and skill_id are required");
-      }
-
-      // Verify ownership
-      const { data: playbook } = await supabase
-        .from("playbooks")
-        .select("id")
-        .eq("id", playbook_id)
-        .eq("user_id", userId)
-        .single();
-
-      if (!playbook) throw new Error("Playbook not found");
-
-      const { data, error } = await supabase
-        .from("skills")
-        .select("*")
-        .eq("id", skill_id)
-        .eq("playbook_id", playbook_id)
-        .single();
-
-      if (error) throw new Error("Skill not found");
-      return data;
-    }
-
-    case "read_memory": {
-      if (!hasPermission(userKey, "memory:read")) {
-        throw new Error("Permission denied: memory:read required");
-      }
-
-      const { playbook_id, key } = args as {
-        playbook_id: string;
-        key: string;
-      };
-
-      if (!playbook_id) throw new Error("playbook_id is required");
-      if (!key) throw new Error("key is required");
-
-      // Verify ownership
-      const { data: playbook } = await supabase
-        .from("playbooks")
-        .select("id")
-        .eq("id", playbook_id)
-        .eq("user_id", userId)
-        .single();
-
-      if (!playbook) throw new Error("Playbook not found");
-
-      const { data, error } = await supabase
-        .from("memories")
-        .select("key, value, tags, description, updated_at")
-        .eq("playbook_id", playbook_id)
-        .eq("key", key)
-        .single();
-
-      if (error) throw new Error("Memory not found");
-      return data;
-    }
-
-    case "search_memory": {
-      if (!hasPermission(userKey, "memory:read")) {
-        throw new Error("Permission denied: memory:read required");
-      }
-
-      const { playbook_id, search, tags } = args as {
-        playbook_id: string;
-        search?: string;
-        tags?: string[];
-      };
-
-      if (!playbook_id) throw new Error("playbook_id is required");
-
-      // Verify ownership
-      const { data: playbook } = await supabase
-        .from("playbooks")
-        .select("id")
-        .eq("id", playbook_id)
-        .eq("user_id", userId)
-        .single();
-
-      if (!playbook) throw new Error("Playbook not found");
-
-      // Build query with optional filters
-      let query = supabase
-        .from("memories")
-        .select("key, value, tags, description, updated_at")
-        .eq("playbook_id", playbook_id);
-
-      if (search) {
-        query = query.or(`key.ilike.%${search}%,description.ilike.%${search}%`);
-      }
-
-      if (tags && tags.length > 0) {
-        query = query.overlaps("tags", tags);
-      }
-
-      const { data, error } = await query.order("updated_at", { ascending: false });
-      if (error) throw new Error(error.message);
-      return data || [];
-    }
-
-    case "write_memory": {
-      if (!hasPermission(userKey, "memory:write")) {
-        throw new Error("Permission denied: memory:write required");
-      }
-
-      const { playbook_id, key, value, tags, description } = args as {
-        playbook_id: string;
-        key: string;
-        value: Record<string, unknown>;
-        tags?: string[];
-        description?: string;
-      };
-
-      if (!playbook_id) throw new Error("playbook_id is required");
-      if (!key) throw new Error("key is required");
-      if (value === undefined) throw new Error("value is required");
-
-      // Verify ownership
-      const { data: playbook } = await supabase
-        .from("playbooks")
-        .select("id")
-        .eq("id", playbook_id)
-        .eq("user_id", userId)
-        .single();
-
-      if (!playbook) throw new Error("Playbook not found");
-
-      const upsertData: Record<string, unknown> = {
-        playbook_id,
-        key,
-        value,
-        updated_at: new Date().toISOString(),
-      };
-
-      if (tags !== undefined) {
-        upsertData.tags = tags;
-      }
-
-      if (description !== undefined) {
-        upsertData.description = description;
-      }
-
-      const { data, error } = await supabase
-        .from("memories")
-        .upsert(upsertData, { onConflict: "playbook_id,key" })
-        .select("key, value, tags, description, updated_at")
-        .single();
-
-      if (error) throw new Error(error.message);
-      return data;
-    }
-
-    case "delete_memory": {
-      if (!hasPermission(userKey, "memory:write")) {
-        throw new Error("Permission denied: memory:write required");
-      }
-
-      const { playbook_id, key } = args as {
-        playbook_id: string;
-        key: string;
-      };
-
-      if (!playbook_id) throw new Error("playbook_id is required");
-      if (!key) throw new Error("key is required");
-
-      // Verify ownership
-      const { data: playbook } = await supabase
-        .from("playbooks")
-        .select("id")
-        .eq("id", playbook_id)
-        .eq("user_id", userId)
-        .single();
-
-      if (!playbook) throw new Error("Playbook not found");
-
-      const { error } = await supabase
-        .from("memories")
-        .delete()
-        .eq("playbook_id", playbook_id)
-        .eq("key", key);
+        .eq("id", playbook_id);
 
       if (error) throw new Error(error.message);
       return { success: true };

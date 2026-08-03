@@ -1,4 +1,5 @@
 import path from "node:path";
+import { isMap, parseDocument } from "yaml";
 import { digest, normalizePath } from "./discovery.js";
 
 const SKILL_NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -26,19 +27,18 @@ function groupBy(items, keyFor) {
 }
 
 function parseFrontmatter(content) {
-  if (!content.startsWith("---")) return { values: {}, valid: false };
-  const end = content.indexOf("\n---", 3);
-  if (end === -1) return { values: {}, valid: false };
-  const values = {};
-  for (const line of content.slice(3, end).split(/\r?\n/)) {
-    // A trailing carriage return would make `.*$` fail to match, silently
-    // dropping the last key before the closing `---`. Discovery normalizes
-    // line endings; this keeps the parser correct for any other caller.
-    const match = line.replace(/\r$/, "").match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
-    if (!match) continue;
-    values[match[1]] = match[2].replace(/^["']|["']$/g, "").trim();
+  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
+  if (!match) return { values: {}, valid: false, body: content };
+  const document = parseDocument(match[1], { strict: true, uniqueKeys: true });
+  if (document.errors.length > 0 || !isMap(document.contents)) {
+    return { values: {}, valid: false, body: content.slice(match[0].length) };
   }
-  return { values, valid: true };
+  const values = document.toJS();
+  return {
+    values: values && typeof values === "object" && !Array.isArray(values) ? values : {},
+    valid: true,
+    body: content.slice(match[0].length),
+  };
 }
 
 function credentialLines(content) {
@@ -125,25 +125,47 @@ export function analyze(inventory) {
   for (const skill of inventory.skills) {
     const frontmatter = parseFrontmatter(skill.content);
     const parentName = path.basename(path.dirname(skill.source));
-    const name = frontmatter.values.name || parentName;
-    const description = frontmatter.values.description || "";
+    const name = typeof frontmatter.values.name === "string" ? frontmatter.values.name : parentName;
+    const description = typeof frontmatter.values.description === "string" ? frontmatter.values.description : "";
     skills.push({ ...skill, name, description });
 
     if (!frontmatter.valid) {
       findings.push(finding("high", "skill.frontmatter.invalid", "SKILL.md must start with valid YAML frontmatter.", skill.source));
     }
-    if (!frontmatter.values.name) {
+    if (typeof frontmatter.values.name !== "string" || frontmatter.values.name.length === 0) {
       findings.push(finding("high", "skill.name.missing", "Skill frontmatter is missing the required name field.", skill.source));
     } else if (!SKILL_NAME_PATTERN.test(frontmatter.values.name) || frontmatter.values.name.length > 64) {
       findings.push(finding("high", "skill.name.invalid", "Skill name must be lowercase kebab-case and no longer than 64 characters.", skill.source));
     }
     if (!description) {
-      findings.push(finding("medium", "skill.description.missing", "Skill frontmatter is missing the required description field.", skill.source));
+      findings.push(finding("high", "skill.description.missing", "Skill frontmatter is missing the required description field.", skill.source));
     } else if (description.length > 1024) {
-      findings.push(finding("medium", "skill.description.long", "Skill description exceeds 1024 characters.", skill.source));
+      findings.push(finding("high", "skill.description.long", "Skill description exceeds 1024 characters.", skill.source));
     }
     if (frontmatter.values.name && frontmatter.values.name !== parentName) {
-      findings.push(finding("low", "skill.directory.mismatch", `Skill name differs from its parent directory (${parentName}).`, skill.source));
+      findings.push(finding("high", "skill.directory.mismatch", `Skill name must match its parent directory (${parentName}).`, skill.source));
+    }
+    if (frontmatter.values.license !== undefined && typeof frontmatter.values.license !== "string") {
+      findings.push(finding("high", "skill.license.invalid", "Skill license must be a string when provided.", skill.source));
+    }
+    if (frontmatter.values.compatibility !== undefined) {
+      if (typeof frontmatter.values.compatibility !== "string" || frontmatter.values.compatibility.length === 0 || frontmatter.values.compatibility.length > 500) {
+        findings.push(finding("high", "skill.compatibility.invalid", "Skill compatibility must be a non-empty string no longer than 500 characters.", skill.source));
+      }
+    }
+    if (frontmatter.values.metadata !== undefined) {
+      const metadata = frontmatter.values.metadata;
+      const validMetadata = metadata && typeof metadata === "object" && !Array.isArray(metadata)
+        && Object.values(metadata).every((value) => typeof value === "string");
+      if (!validMetadata) {
+        findings.push(finding("high", "skill.metadata.invalid", "Skill metadata must map string keys to string values.", skill.source));
+      }
+    }
+    if (frontmatter.values["allowed-tools"] !== undefined && typeof frontmatter.values["allowed-tools"] !== "string") {
+      findings.push(finding("high", "skill.allowed-tools.invalid", "Skill allowed-tools must be a space-delimited string when provided.", skill.source));
+    }
+    if (frontmatter.body.split(/\r?\n/).length > 500) {
+      findings.push(finding("low", "skill.body.long", "SKILL.md exceeds the recommended 500-line limit; move detailed material into references.", skill.source));
     }
     const lines = credentialLines(skill.content);
     if (lines.length) {

@@ -65,3 +65,45 @@ test("doctor ignores generated and dependency directories", async () => {
   const report = await runDoctor(root);
   assert.equal(report.inventory.skills.length, 0);
 });
+
+test("doctor accepts the optional Agent Skills frontmatter fields", async () => {
+  const root = await fixture();
+  await put(root, ".agents/skills/code-review/SKILL.md", `---
+name: code-review
+description: >-
+  Review code safely when a pull request needs validation.
+license: Apache-2.0
+compatibility: Requires git.
+metadata:
+  author: AgentPlaybooks
+  version: "1.0"
+allowed-tools: Bash(git:*) Read
+---
+# Review
+`);
+
+  const report = await runDoctor(root);
+  assert.equal(report.findings.length, 0);
+});
+
+test("doctor enforces Agent Skills directory and optional field constraints", async () => {
+  const root = await fixture();
+  await put(root, ".agents/skills/wrong-directory/SKILL.md", `---
+name: actual-name
+description: Valid description.
+compatibility: ${"x".repeat(501)}
+metadata:
+  version: 1
+allowed-tools:
+  - Bash
+---
+Body.
+`);
+
+  const report = await runDoctor(root);
+  const findings = new Map(report.findings.map((item) => [item.code, item]));
+  assert.equal(findings.get("skill.directory.mismatch")?.severity, "high");
+  assert.ok(findings.has("skill.compatibility.invalid"));
+  assert.ok(findings.has("skill.metadata.invalid"));
+  assert.ok(findings.has("skill.allowed-tools.invalid"));
+});

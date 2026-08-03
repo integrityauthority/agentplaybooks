@@ -27,7 +27,7 @@ Welcome to the AgentPlaybooks documentation.
 
 ## What is AgentPlaybooks?
 
-AgentPlaybooks is a platform-independent memory and toolkit for AI agents, including Gemini Gems (Gem agents). It provides:
+AgentPlaybooks is a vendor-neutral, platform-independent home for AI agents, including Gemini Gems (Gem agents). It provides:
 
 - **Personas** - Reusable system prompts that work across any AI platform
 - **Skills** - Structured capabilities in Anthropic skill format
@@ -43,7 +43,7 @@ When you use multiple AI platforms (ChatGPT, Claude, custom agents), you often n
 - Re-configure the same tools and capabilities
 - Lose context when switching platforms
 
-AgentPlaybooks solves this by providing a central vault that any AI can access.
+AgentPlaybooks solves this with a portable source of truth that any compatible AI can access. Your agents, skills, tools, and memory remain yours when you switch platforms, work across several platforms at once, or self-host the service.
 
 ## Contributing
 

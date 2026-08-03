@@ -1,0 +1,33 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "ai.agentplaybooks/agentplaybooks",
+  "title": "AgentPlaybooks",
+  "description": "Portable, vendor-neutral home for agent skills, MCP servers, personas, and memory.",
+  "version": "0.2.0",
+  "websiteUrl": "https://agentplaybooks.ai",
+  "repository": {
+    "url": "https://github.com/matebenyovszky/agentplaybooks",
+    "source": "github"
+  },
+  "icons": [
+    {
+      "src": "https://agentplaybooks.ai/icon.svg",
+      "mimeType": "image/svg+xml",
+      "sizes": ["any"]
+    }
+  ],
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://agentplaybooks.ai/api/mcp/manage",
+      "headers": [
+        {
+          "name": "Authorization",
+          "description": "Bearer AgentPlaybooks user API key (for example: Bearer apb_live_...)",
+          "isRequired": true,
+          "isSecret": true
+        }
+      ]
+    }
+  ]
+}
