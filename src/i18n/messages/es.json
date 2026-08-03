@@ -17,8 +17,8 @@
   },
   "landing": {
     "hero": {
-      "title": "Tus agentes. Tus habilidades. Cualquier plataforma.",
-      "subtitle": "Guarda personas, habilidades, servidores MCP, instrucciones de proyecto y memoria en un espacio independiente del proveedor. Cambia de plataforma o usa varias a la vez sin perder tu configuración.",
+      "title": "Un playbook. Todos tus agentes.",
+      "subtitle": "Habilidades, servidores MCP, instrucciones de proyecto y memoria en una única fuente de verdad portátil — desplegada a Claude Code, Cursor, Codex, Antigravity y Hermes con un solo comando.",
       "cta": "Empieza Gratis",
       "tryDemo": "Probar Demo"
     },
@@ -47,6 +47,11 @@
       "api": {
         "title": "Acceso con Clave API",
         "description": "Deja que tu IA escriba de vuelta - actualiza memoria, habilidades y personas programáticamente"
+      },
+      "canvas": {
+        "title": "Canvas",
+        "description": "Documentos Markdown estructurados como espacio de trabajo persistente del agente",
+        "comingSoon": true
       }
     },
     "howItWorks": {
@@ -69,6 +74,70 @@
       "description": "Explora y añade habilidades pre-construidas y servidores MCP creados por la comunidad",
       "browseSkills": "Explorar Habilidades",
       "browseMCP": "Explorar Servidores MCP"
+    },
+    "whatIsPlaybook": {
+      "title": "¿Qué es un Playbook?",
+      "subtitle": "Un Playbook es el entorno operativo completo de un agente de IA: todo lo que necesita para trabajar con eficacia, en un solo lugar.",
+      "description": "Piénsalo como el perfil de trabajo portátil de tu agente: una fuente de verdad que viaja contigo entre plataformas y proveedores.",
+      "components": {
+        "persona": {
+          "title": "Persona",
+          "subtitle": "Personalidad y estilo",
+          "description": "La personalidad base del agente, su estilo de comunicación y su system prompt. Define CÓMO se comporta y responde el agente."
+        },
+        "skills": {
+          "title": "Habilidades",
+          "subtitle": "Conocimiento y capacidades",
+          "description": "Definiciones de tareas estructuradas y conocimiento que el agente puede usar. Las habilidades definen QUÉ sabe y qué puede hacer el agente. Más adelante: adjunta documentos para un conocimiento más profundo."
+        },
+        "mcp": {
+          "title": "Servidores MCP",
+          "subtitle": "Herramientas e integraciones",
+          "description": "Herramientas y APIs externas a las que el agente accede mediante Model Context Protocol. La ejecución de código ocurre en el propio agente; esto son las conexiones."
+        },
+        "canvas": {
+          "title": "Canvas",
+          "subtitle": "Documentos de trabajo",
+          "description": "Documentos Markdown estructurados que sirven como espacio de trabajo del agente. Notas, borradores, archivos de proyecto: documentos persistentes que el agente puede leer y escribir."
+        },
+        "memory": {
+          "title": "Memoria",
+          "subtitle": "Contexto persistente",
+          "description": "Almacenamiento clave-valor para recordar hechos, preferencias y estado entre sesiones. La memoria a largo plazo del agente."
+        }
+      },
+      "cta": "Crea tu primer Playbook"
+    },
+    "useCases": {
+      "title": "¿Te suena familiar?",
+      "subtitle": "Problemas reales que AgentPlaybooks resuelve",
+      "cases": {
+        "switchPlatform": {
+          "question": "¿Quieres cambiar de ChatGPT a Gemini, pero no puedes llevarte tu memoria ni tus conversaciones?",
+          "answer": "Tu playbook viaja contigo. Todas las personas, habilidades y memorias se guardan de forma independiente de la plataforma: solo apunta tu nueva IA a la URL de tu playbook."
+        },
+        "portableSkills": {
+          "question": "¿Has creado habilidades excelentes en Claude y quieres usarlas también en otras plataformas?",
+          "answer": "Las habilidades de tu playbook funcionan en cualquier sitio. Expórtalas en formato Anthropic, como OpenAPI para GPTs o en cualquier otro formato: tu inversión no queda atada a un proveedor."
+        },
+        "missingActions": {
+          "question": "¿Te gusta Grok pero echas de menos las acciones personalizadas y las integraciones de ChatGPT?",
+          "answer": "Define tus servidores MCP y tus herramientas en el playbook: cualquier IA que soporte uso de herramientas puede acceder a ellas, sea cual sea la plataforma."
+        },
+        "teamConsistency": {
+          "question": "¿Tu equipo usa plataformas de IA distintas pero necesita un comportamiento consistente?",
+          "answer": "Comparte una URL de playbook. La IA de cada persona —Claude, GPT o un LLM local— sigue las mismas pautas y accede a las mismas habilidades."
+        },
+        "futureProof": {
+          "question": "¿Te preocupa quedar atado a la plataforma de IA de hoy?",
+          "answer": "AgentPlaybooks es open source y usa formatos estándar. Tus playbooks funcionarán con las IAs y los robots de mañana: construimos pensando en el futuro."
+        },
+        "localLlm": {
+          "question": "¿Ejecutas LLMs locales pero quieres las mismas capacidades que en los servicios en la nube?",
+          "answer": "Apunta tu modelo local a tu playbook. Las mismas habilidades, la misma persona, la misma memoria, ejecutándose en tu hardware."
+        }
+      },
+      "cta": "Resuelve estos problemas hoy"
     }
   },
   "enterprise": {
@@ -159,7 +228,8 @@
       "copy": "Copiar instrucciones",
       "saveError": "No se pudieron guardar las instrucciones. Tus cambios siguen aquí, inténtalo de nuevo.",
       "tip": "Los cambios se guardan automáticamente. Se admite Markdown - usa títulos y viñetas cortas para que el agente pueda seguir las reglas con facilidad."
-    }
+    },
+    "addCanvas": "Añadir Canvas"
   },
   "apiKeys": {
     "title": "Claves API",
@@ -182,7 +252,7 @@
     }
   },
   "explore": {
-    "title": "Skills Store",
+    "title": "Explorar",
     "subtitle": "Descubre habilidades de IA, playbooks y servidores MCP compartidos por la comunidad.",
     "tabPlaybooks": "Playbooks",
     "tabSkills": "Habilidades",
@@ -217,5 +287,14 @@
     "createOwnDesc": "Construye y comparte tu configuración de IA con el mundo. Regístrate para crear y guardar tus propios playbooks.",
     "view": "Ver",
     "yours": "Tuyo"
+  },
+  "canvas": {
+    "title": "Documentos Canvas",
+    "description": "Documentos Markdown estructurados para el espacio de trabajo de tu agente",
+    "empty": "Aún no hay documentos Canvas",
+    "emptyDescription": "Crea documentos Markdown que tu agente pueda leer y escribir",
+    "addNew": "Nuevo documento",
+    "untitled": "Documento sin título",
+    "lastModified": "Última modificación"
   }
 }

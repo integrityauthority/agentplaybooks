@@ -146,15 +146,15 @@ export default function EnterprisePage() {
             </div>
 
             <h1 className="text-5xl md:text-7xl font-bold mb-6 gradient-text">
-              The First Agent &
+              One playbook
               <br />
-              Robot Skills Store
+              for your whole team
             </h1>
 
             <p className="text-xl text-neutral-600 dark:text-slate-400 max-w-3xl mx-auto mb-6">
-              A platform-independent marketplace for AI capabilities.
-              Share skills, personas, and MCP servers across any agent -
-              from ChatGPT to physical robots.
+              A single validated source of truth for the skills, tools, instructions, and secrets
+              your team&apos;s agents run on — with roles, one-time editor invites, and no credentials
+              on anyone&apos;s disk. Platform-independent, from ChatGPT to physical robots.
             </p>
 
             <p className="text-lg text-amber-600 dark:text-amber-400 max-w-2xl mx-auto mb-10 font-medium">
@@ -166,7 +166,7 @@ export default function EnterprisePage() {
                 href="/explore"
                 className="inline-flex items-center gap-2 px-8 py-4 bg-gradient-to-r from-amber-600 to-amber-400 text-slate-900 hover:opacity-90 rounded-full font-semibold transition-colors shadow-lg shadow-amber-500/25"
               >
-                Explore Skills Store
+                Explore Public Skills
                 <ArrowRight className="w-5 h-5" />
               </Link>
               <a
@@ -187,7 +187,7 @@ export default function EnterprisePage() {
               transition={{ duration: 0.5, delay: 0.6 }}
               className="mt-12 flex flex-wrap justify-center gap-3"
             >
-              {["Subagent", "Jack Is", "I Know Kungfu", "Skill Download", "Anthropic Skills", "skills.md", "MCP Protocol", "OpenAPI", "JSON Schema", "Docker Ready", "Self-Hosted", "Zero Lock-in"].map((tech) => (
+              {["Agent Skills", "SKILL.md", "AGENTS.md", "MCP Protocol", "OpenAPI", "JSON Schema", "RBAC", "Encrypted Secrets", "Audit Logs", "Docker Ready", "Self-Hosted", "Zero Lock-in"].map((tech) => (
                 <span
                   key={tech}
                   className="px-3 py-1 text-sm bg-amber-100 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-800/50 rounded-full text-amber-700 dark:text-amber-300"

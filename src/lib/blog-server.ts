@@ -24,7 +24,9 @@ function blogDebugLog(message: string, meta?: Record<string, unknown>) {
 
 // Helper to parse frontmatter without adding a heavy dependency
 function parseFrontmatter(fileContent: string): { metadata: Record<string, string>; content: string } {
-    const frontmatterRegex = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/;
+    // `\r?\n`, not `\n`: a CRLF-served markdown file otherwise misses entirely
+    // and the post renders with its slug as the title.
+    const frontmatterRegex = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/;
     const match = fileContent.match(frontmatterRegex);
 
     if (!match) {

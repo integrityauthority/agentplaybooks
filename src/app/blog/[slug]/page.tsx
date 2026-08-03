@@ -4,6 +4,7 @@ import BlogPostClient from "../BlogPostClient";
 import { notFound } from "next/navigation";
 import { Metadata } from "next";
 import { getRequestBaseUrl } from "@/lib/request-base-url";
+import { absoluteUrl } from "@/lib/site-url";
 
 type PageProps = {
     params: Promise<{ slug: string }>;
@@ -21,9 +22,23 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
         };
     }
 
+    // The canonical is built from the configured origin, never from the request
+    // host: a preview or alternate domain must point back at the real URL rather
+    // than declaring itself canonical.
+    const url = absoluteUrl(`/blog/${resolvedParams.slug}`);
+
     return {
         title: `${post.title} - Blog`,
         description: post.description,
+        alternates: { canonical: url },
+        openGraph: {
+            title: post.title,
+            description: post.description,
+            url,
+            type: "article",
+            publishedTime: post.date,
+            ...(post.author ? { authors: [post.author] } : {}),
+        },
     };
 }
 

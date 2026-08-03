@@ -17,8 +17,8 @@
   },
   "landing": {
     "hero": {
-      "title": "Ihre Agenten. Ihre Skills. Jede Plattform.",
-      "subtitle": "Bewahren Sie Personas, Skills, MCP-Server, Projektanweisungen und Speicher an einem vendor-neutralen Ort auf. Wechseln Sie Plattformen oder nutzen Sie mehrere gleichzeitig, ohne Ihre Konfiguration zu verlieren.",
+      "title": "Ein Playbook. Jeder Agent.",
+      "subtitle": "Skills, MCP-Server, Projektanweisungen und Speicher in einer portablen Single Source of Truth — mit einem Befehl ausgerollt nach Claude Code, Cursor, Codex, Antigravity und Hermes.",
       "cta": "Kostenlos Starten",
       "tryDemo": "Demo Testen"
     },
@@ -47,6 +47,11 @@
       "api": {
         "title": "API-Schlüssel-Zugang",
         "description": "Lassen Sie Ihre KI zurückschreiben - aktualisieren Sie Speicher, Skills und Personas programmatisch"
+      },
+      "canvas": {
+        "title": "Canvas",
+        "description": "Strukturierte Markdown-Dokumente als persistenter Arbeitsbereich des Agenten",
+        "comingSoon": true
       }
     },
     "howItWorks": {
@@ -69,6 +74,70 @@
       "description": "Durchsuchen und fügen Sie vorgefertigte Skills und MCP-Server der Community hinzu",
       "browseSkills": "Skills Durchsuchen",
       "browseMCP": "MCP-Server Durchsuchen"
+    },
+    "whatIsPlaybook": {
+      "title": "Was ist ein Playbook?",
+      "subtitle": "Ein Playbook ist die vollständige Arbeitsumgebung eines KI-Agenten — alles, was er für effektive Arbeit braucht, an einem Ort.",
+      "description": "Betrachten Sie es als das portable Arbeitsprofil Ihres Agenten: eine Single Source of Truth, die Sie über Plattformen und Anbieter hinweg mitnehmen.",
+      "components": {
+        "persona": {
+          "title": "Persona",
+          "subtitle": "Persönlichkeit & Stil",
+          "description": "Die Grundpersönlichkeit, der Kommunikationsstil und der System-Prompt des Agenten. Das definiert, WIE der Agent sich verhält und antwortet."
+        },
+        "skills": {
+          "title": "Skills",
+          "subtitle": "Wissen & Fähigkeiten",
+          "description": "Strukturierte Aufgabendefinitionen und Wissen, das der Agent nutzen kann. Skills definieren, WAS der Agent weiß und kann. Später: Dokumente für tiefergehendes Wissen anhängen."
+        },
+        "mcp": {
+          "title": "MCP-Server",
+          "subtitle": "Werkzeuge & Integrationen",
+          "description": "Externe Werkzeuge und APIs, auf die der Agent über das Model Context Protocol zugreift. Die Codeausführung findet beim Agenten selbst statt — das hier sind die Verbindungen."
+        },
+        "canvas": {
+          "title": "Canvas",
+          "subtitle": "Arbeitsdokumente",
+          "description": "Strukturierte Markdown-Dokumente als Arbeitsbereich des Agenten. Notizen, Entwürfe, Projektdateien — persistente Dokumente, die der Agent lesen und schreiben kann."
+        },
+        "memory": {
+          "title": "Speicher",
+          "subtitle": "Persistenter Kontext",
+          "description": "Key-Value-Speicher für Fakten, Präferenzen und Zustand über Sitzungen hinweg. Das Langzeitgedächtnis des Agenten."
+        }
+      },
+      "cta": "Erstellen Sie Ihr erstes Playbook"
+    },
+    "useCases": {
+      "title": "Kommt Ihnen das bekannt vor?",
+      "subtitle": "Echte Probleme, die AgentPlaybooks löst",
+      "cases": {
+        "switchPlatform": {
+          "question": "Sie möchten von ChatGPT zu Gemini wechseln, können aber Ihren Speicher und Ihre Konversationen nicht mitnehmen?",
+          "answer": "Ihr Playbook zieht mit um. Alle Personas, Skills und Erinnerungen liegen plattformunabhängig — Sie richten Ihre neue KI einfach auf die URL Ihres Playbooks."
+        },
+        "portableSkills": {
+          "question": "Sie haben großartige Skills in Claude gebaut und möchten sie auch auf anderen Plattformen nutzen?",
+          "answer": "Skills in Ihrem Playbook funktionieren überall. Export im Anthropic-Format, als OpenAPI für GPTs oder in jedem anderen Format — Ihre Investition ist an keinen Anbieter gebunden."
+        },
+        "missingActions": {
+          "question": "Sie mögen Grok, vermissen aber die Custom Actions und Integrationen von ChatGPT?",
+          "answer": "Definieren Sie Ihre MCP-Server und Werkzeuge im Playbook — jede KI mit Tool-Unterstützung kann darauf zugreifen, unabhängig von der Plattform."
+        },
+        "teamConsistency": {
+          "question": "Ihr Team nutzt unterschiedliche KI-Plattformen, braucht aber einheitliches Verhalten?",
+          "answer": "Teilen Sie eine Playbook-URL. Jede KI im Team — ob Claude, GPT oder lokales LLM — folgt denselben Richtlinien und hat Zugriff auf dieselben Skills."
+        },
+        "futureProof": {
+          "question": "Sorgen, sich an die KI-Plattform von heute zu binden?",
+          "answer": "AgentPlaybooks ist Open Source und nutzt Standardformate. Ihre Playbooks werden mit den KIs und Robotern von morgen funktionieren — wir bauen für die Zukunft."
+        },
+        "localLlm": {
+          "question": "Sie betreiben lokale LLMs, möchten aber dieselben Fähigkeiten wie bei Cloud-Diensten?",
+          "answer": "Richten Sie Ihr lokales Modell auf Ihr Playbook. Dieselben Skills, dieselbe Persona, derselbe Speicher — nur auf Ihrer Hardware."
+        }
+      },
+      "cta": "Diese Probleme heute lösen"
     }
   },
   "enterprise": {
@@ -159,7 +228,8 @@
       "copy": "Anweisungen kopieren",
       "saveError": "Die Anweisungen konnten nicht gespeichert werden. Ihre Änderungen sind noch vorhanden, bitte versuchen Sie es erneut.",
       "tip": "Änderungen werden automatisch gespeichert. Markdown wird unterstützt - verwenden Sie Überschriften und kurze Stichpunkte, damit der Agent die Regeln leicht befolgen kann."
-    }
+    },
+    "addCanvas": "Canvas hinzufügen"
   },
   "apiKeys": {
     "title": "API-Schlüssel",
@@ -182,7 +252,7 @@
     }
   },
   "explore": {
-    "title": "Skills Store",
+    "title": "Entdecken",
     "subtitle": "Entdecken Sie von der Community geteilte KI-Skills, Playbooks und MCP-Server.",
     "tabPlaybooks": "Playbooks",
     "tabSkills": "Skills",
@@ -217,5 +287,14 @@
     "createOwnDesc": "Erstellen und teilen Sie Ihre KI-Konfiguration mit der Welt. Registrieren Sie sich, um Ihre eigenen Playbooks zu erstellen und zu speichern.",
     "view": "Ansehen",
     "yours": "Eigenes"
+  },
+  "canvas": {
+    "title": "Canvas-Dokumente",
+    "description": "Strukturierte Markdown-Dokumente für den Arbeitsbereich Ihres Agenten",
+    "empty": "Noch keine Canvas-Dokumente",
+    "emptyDescription": "Erstellen Sie Markdown-Dokumente, die Ihr Agent lesen und schreiben kann",
+    "addNew": "Neues Dokument",
+    "untitled": "Unbenanntes Dokument",
+    "lastModified": "Zuletzt geändert"
   }
 }

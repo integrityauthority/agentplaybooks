@@ -1,6 +1,6 @@
 # AgentPlaybooks Roadmap
 
-This document outlines the development roadmap for AgentPlaybooks - the first open source Agent & Robot Skills Store.
+This document outlines the development roadmap for AgentPlaybooks — the open source, portable operating environment for AI agents (and, in time, physical robots).
 
 ## Legend
 
@@ -34,7 +34,7 @@ This document outlines the development roadmap for AgentPlaybooks - the first op
 
 ### Public Features ✅
 
-- [x] **Skills Store** - Browse and discover public playbooks
+- [x] **Community library** - Browse and discover public playbooks
 - [x] **Star System** - Star favorite playbooks
 - [x] **Search** - Find playbooks by name/description
 - [x] **Demo Playbook** - Try before signup

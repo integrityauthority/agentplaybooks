@@ -1,6 +1,6 @@
 # AgentPlaybooks
 
-Vendor-neutral, platform-independent home for AI agent skills, tools, and memory.
+**One playbook, every agent.** A portable operating environment for AI agents — persona, skills, MCP servers, project instructions, and memory in one source of truth.
 
 Keep your agents yours. AgentPlaybooks stores skills, personas, MCP servers, project instructions, and memory in one portable playbook, so you can switch platforms, use several at once, or self-host without vendor lock-in.
 
@@ -92,7 +92,9 @@ and `agentplaybooks sync <project>` creates the canonical
 `agentplaybook.json` plus the platform files missing from enabled targets:
 Claude Code (`.claude/skills` + `.mcp.json`), Cursor (`.cursor/skills` +
 `.cursor/mcp.json`), ChatGPT/Codex (`.codex/skills` + `.codex/config.toml`),
-Google Antigravity (`.agents/skills`), and Hermes Agent (`~/.hermes/skills`).
+Google Antigravity (`.agents/skills`), and Hermes Agent (`.agents/skills`
+registered in `~/.hermes/config.yaml`, plus that file's `mcp_servers:` and
+`SOUL.md`).
 `login` / `playbooks` / `pull` / `push` synchronize skills, MCP servers, and the
 manifest with a hosted playbook using a user API key; secret values never move,
 only the references the playbook declares in `spec.secrets`. All mutating
