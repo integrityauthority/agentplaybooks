@@ -73,4 +73,4 @@ Die Zugangsdaten jedes Servers werden mit einem Schlüssel verschlüsselt, der �
 
 `access: "public"` kann Upstream-Kosten öffentlich auslösbar machen. Empfohlen ist `playbook_api_key`; der Client benötigt dann `tools:call` oder `full`.
 
-Eigentümer lesen den Metadaten-Auditverlauf über `GET /api/mcp/audit/PLAYBOOK_GUID?limit=100` mit einer Sitzung oder einem User-API-Key mit `playbooks:read`.
+Eigentümer lesen den Metadaten-Auditverlauf über `GET /api/playbooks/PLAYBOOK_GUID/audit?limit=100` (der frühere `GET /api/mcp/audit/PLAYBOOK_GUID` antwortet weiterhin gleich) mit einer Sitzung oder einem User-API-Key mit `playbooks:read`.

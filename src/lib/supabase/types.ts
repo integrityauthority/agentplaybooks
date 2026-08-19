@@ -118,15 +118,31 @@ export type MCPServerSecretRow = {
   updated_at: string;
 };
 
-export type MCPProxyAuditLogRow = {
+/**
+ * One playbook audit event — a federated MCP call or a secrets vault operation.
+ *
+ * `denied` is a refused attempt; `error` is an authorized one that failed.
+ * A row never holds a secret value, a full outbound URL, or an API key —
+ * see supabase/migrations/20260819_audit_logs_secrets.sql.
+ */
+export type AuditLogRow = {
   id: string;
   playbook_id: string;
-  mcp_server_id: string;
+  /** NULL for vault operations, which have no federated server. */
+  mcp_server_id: string | null;
+  /** A federated operation (`tools/call`, …) or a vault one (`secret.use`, …). */
   operation: string;
+  /** The federated target, or the destination *host* of a `secret.use`. */
   target: string | null;
-  status: "success" | "error";
+  status: "success" | "denied" | "error";
   latency_ms: number;
+  /** A short code, never a message. */
   error_code: string | null;
+  actor_type: "owner" | "api_key" | "anonymous" | null;
+  /** A user id, or an API key prefix. */
+  actor_id: string | null;
+  /** Which secret a `secret.*` row is about; by name, so a delete survives. */
+  secret_name: string | null;
   request_id: string | null;
   created_at: string;
 };
@@ -397,6 +413,29 @@ export type SecretMetadata = {
   updated_at: string;
 };
 
+/**
+ * Vault operations, as they appear in `audit_logs.operation`.
+ *
+ * Namespaced so one table and one endpoint can carry federated calls and vault
+ * events side by side, and so a third kind of event needs no migration.
+ */
+export const SECRET_AUDIT_OPERATIONS = [
+  'secret.create',
+  'secret.rotate',
+  'secret.update',
+  'secret.delete',
+  'secret.reveal',
+  'secret.use',
+  'secret.list',
+] as const;
+
+export type SecretAuditOperation = typeof SECRET_AUDIT_OPERATIONS[number];
+
+/** `denied` is a refused attempt; `error` is an authorized one that failed. */
+export type AuditStatus = 'success' | 'denied' | 'error';
+
+export type AuditActorType = 'owner' | 'api_key' | 'anonymous';
+
 // Known publisher IDs
 export const PUBLISHER_IDS = {
   AGENT_PLAYBOOKS: '00000000-0000-0000-0000-000000000001',
@@ -442,10 +481,10 @@ export interface Database {
         Update: Partial<Omit<MCPServerSecretRow, "mcp_server_id" | "created_at">>;
         Relationships: [];
       };
-      mcp_proxy_audit_logs: {
-        Row: MCPProxyAuditLogRow;
-        Insert: Omit<MCPProxyAuditLogRow, "id" | "created_at"> & { id?: string; created_at?: string };
-        Update: Partial<Omit<MCPProxyAuditLogRow, "id" | "created_at">>;
+      audit_logs: {
+        Row: AuditLogRow;
+        Insert: Partial<AuditLogRow> & Pick<AuditLogRow, "playbook_id" | "operation" | "status">;
+        Update: Partial<Omit<AuditLogRow, "id" | "created_at">>;
         Relationships: [];
       };
       canvas: {

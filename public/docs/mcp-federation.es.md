@@ -73,4 +73,4 @@ Las credenciales de cada servidor se cifran con una clave derivada de ese valor 
 
 `access: "public"` puede permitir que cualquiera genere costes upstream. Se recomienda `playbook_api_key`; el cliente necesita permiso `tools:call` o `full`.
 
-El propietario puede consultar el historial de auditoría en `GET /api/mcp/audit/PLAYBOOK_GUID?limit=100` con una sesión o una API key de usuario con permiso `playbooks:read`.
+El propietario puede consultar el historial de auditoría en `GET /api/playbooks/PLAYBOOK_GUID/audit?limit=100` (el anterior `GET /api/mcp/audit/PLAYBOOK_GUID` sigue respondiendo igual) con una sesión o una API key de usuario con permiso `playbooks:read`.
