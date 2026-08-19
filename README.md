@@ -92,7 +92,8 @@ and `agentplaybooks sync <project>` creates the canonical
 `agentplaybook.json` plus the platform files missing from enabled targets:
 Claude Code (`.claude/skills` + `.mcp.json`), Cursor (`.cursor/skills` +
 `.cursor/mcp.json`), ChatGPT/Codex (`.codex/skills` + `.codex/config.toml`),
-Google Antigravity (`.agents/skills`), and Hermes Agent (`.agents/skills`
+Google Antigravity (`.agents/skills`), Grok Bot (`.agents/skills`, which it
+discovers natively alongside `AGENTS.md`), and Hermes Agent (`.agents/skills`
 registered in `~/.hermes/config.yaml`, plus that file's `mcp_servers:` and
 `SOUL.md`).
 `login` / `playbooks` / `pull` / `push` synchronize skills, MCP servers, and the
