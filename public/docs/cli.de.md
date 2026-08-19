@@ -43,6 +43,7 @@ aktivierten Deployment-Zielen fehlen:
 | `cursor` — Cursor | `.cursor/skills/<name>/SKILL.md` | `.cursor/mcp.json` | — |
 | `codex` — ChatGPT / OpenAI Codex | `.codex/skills/<name>/SKILL.md` | `.codex/config.toml` | liest `AGENTS.md` nativ |
 | `antigravity` — Google Antigravity | `.agents/skills/<name>/SKILL.md` | — (globale Konfig.) | — |
+| `grok` — Grok Bot (xAI) | `.agents/skills/<name>/SKILL.md` | — (Konto-MCP-Box; wird gemeldet) | liest `AGENTS.md` nativ |
 | `hermes` — Hermes Agent (Nous Research) | `.agents/skills/<name>/SKILL.md`, registriert in `~/.hermes/config.yaml` | `mcp_servers:` in `~/.hermes/config.yaml` | liest `AGENTS.md` nativ; Persona → `~/.hermes/SOUL.md` |
 
 Erkannte Plattformen werden automatisch aktiviert; `antigravity` und `hermes`
@@ -196,6 +197,18 @@ anwenden).
 - **Google Antigravity**: liest Projekt-Skills aus `.agents/skills/` — genau
   dem portablen Speicher von AgentPlaybooks; ein gezogenes Playbook ist ohne
   Zusatzschritt Antigravity-bereit.
+- **Grok Bot (xAI)**: findet Skills über eine feste Liste von Wurzeln, die den
+  portablen Speicher `.agents/skills/` bereits enthält (neben `.claude/skills/`,
+  `.codex/skills/` und `.cursor/skills/`), und sein Systemprompt lädt `AGENTS.md`
+  direkt — ein synchronisiertes Projekt ist also ohne Brückendatei Grok-bereit.
+  Die **Ausnahme sind MCP-Server**: Grok Bot speichert in
+  `~/.grokbot/settings.json` nur ein Array von Server-*IDs* (`mcpBoxServers`),
+  die Definitionen liegen in der MCP Box des Kontos — keine Projektdatei kann
+  sie bereitstellen. `sync` meldet daher die Server, die es nicht übergeben
+  konnte, statt sie stillschweigend fallen zu lassen. Der Weg darum herum ist
+  ein einziger Eintrag: den eigenen MCP-Endpunkt des Playbooks
+  (`POST /api/mcp/<guid>`) einmal in die Box aufnehmen — danach erreichen
+  Skills, Memory, Canvas und `use_secret` jede Grok-Bot-Sitzung.
 - **Hermes Agent**: ein Profil hält alles in `~/.hermes` (oder `$HERMES_HOME`).
   Sync kopiert die Skills nicht in dieses Profil, sondern registriert den
   portablen Speicher unter `skills.external_dirs` in `~/.hermes/config.yaml` —

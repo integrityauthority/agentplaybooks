@@ -43,6 +43,7 @@ habilitado:
 | `cursor` — Cursor | `.cursor/skills/<nombre>/SKILL.md` | `.cursor/mcp.json` | — |
 | `codex` — ChatGPT / OpenAI Codex | `.codex/skills/<nombre>/SKILL.md` | `.codex/config.toml` | lee `AGENTS.md` de forma nativa |
 | `antigravity` — Google Antigravity | `.agents/skills/<nombre>/SKILL.md` | — (config. global) | — |
+| `grok` — Grok Bot (xAI) | `.agents/skills/<nombre>/SKILL.md` | — (MCP Box de la cuenta; se informa) | lee `AGENTS.md` de forma nativa |
 | `hermes` — Hermes Agent (Nous Research) | `.agents/skills/<nombre>/SKILL.md`, registrado en `~/.hermes/config.yaml` | `mcp_servers:` en `~/.hermes/config.yaml` | lee `AGENTS.md` de forma nativa; persona → `~/.hermes/SOUL.md` |
 
 Las plataformas detectadas se habilitan automáticamente; `antigravity` y
@@ -200,6 +201,18 @@ aprobación).
 - **Google Antigravity**: lee los skills del proyecto desde `.agents/skills/`,
   exactamente el almacén portátil de AgentPlaybooks — un playbook descargado
   queda listo para Antigravity sin pasos extra.
+- **Grok Bot (xAI)**: descubre los skills desde un conjunto fijo de raíces que
+  ya incluye el almacén portátil `.agents/skills/` (junto a `.claude/skills/`,
+  `.codex/skills/` y `.cursor/skills/`), y su system prompt carga `AGENTS.md`
+  directamente — así que un proyecto sincronizado queda listo para Grok sin
+  archivo puente. La **excepción son los servidores MCP**: Grok Bot solo guarda
+  un array de *ids* de servidor en `~/.grokbot/settings.json` (`mcpBoxServers`)
+  y las definiciones viven en la MCP Box de la cuenta, por lo que ningún archivo
+  de proyecto puede aprovisionarlos. Por eso `sync` informa de los servidores
+  que no pudo entregar en lugar de descartarlos en silencio. La salida es una
+  sola entrada: añade una vez el propio endpoint MCP del playbook
+  (`POST /api/mcp/<guid>`) a la Box y sus skills, memoria, canvas y `use_secret`
+  llegarán a cada sesión de Grok Bot.
 - **Hermes Agent**: un perfil guarda todo en `~/.hermes` (o `$HERMES_HOME`). En
   lugar de copiar los skills a ese perfil, sync registra el almacén portátil en
   `skills.external_dirs` dentro de `~/.hermes/config.yaml` — Hermes los lee donde
