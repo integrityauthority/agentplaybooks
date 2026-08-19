@@ -844,6 +844,55 @@ Authorization: Bearer <jwt>
 
 Owner only. Permanently deletes the secret.
 
+### Audit Trail
+
+Vault operations are recorded in the same `audit_logs` trail as federated MCP calls, namespaced
+`secret.*` in `operation`, and read at the shared endpoint:
+
+```http
+GET /api/playbooks/:guid/audit?operation=secret.
+GET /api/playbooks/:guid/audit?operation=secret.use,secret.reveal&secret=OPENAI_API_KEY&limit=200
+Authorization: Bearer <jwt_or_user_api_key>
+```
+
+Every operation — `secret.create`, `secret.rotate`, `secret.update`, `secret.delete`,
+`secret.reveal`, `secret.use`, `secret.list` — is recorded, including the ones that were refused.
+Each entry carries the outcome (`success`, `denied`, `error`), who acted (the owner's user id, or
+an API key's prefix), the destination **host** in `target` for `secret.use`, and a short
+`error_code` such as `not_authorized`, `destination_not_allowed` or
+`reveal_not_permitted_for_api_key`.
+
+Entries never contain a secret value, a full outbound URL (a path or query string carries data
+of its own), or an API key.
+
+Owner access only: a session, or a **user** API key with `playbooks:read`. A playbook API key —
+the credential agents use to perform vault operations — cannot read the record of them.
+
+```json
+{
+  "logs": [
+    {
+      "id": "…",
+      "mcp_server_id": null,
+      "operation": "secret.use",
+      "target": "attacker.example.com",
+      "status": "denied",
+      "error_code": "destination_not_allowed",
+      "actor_type": "api_key",
+      "actor_id": "apb_live_a1b2",
+      "secret_name": "OPENAI_API_KEY",
+      "request_id": "…",
+      "created_at": "2026-08-19T09:12:44.000Z"
+    }
+  ]
+}
+```
+
+`limit` defaults to 100 and is capped at 500. `operation` takes a comma-separated list of exact
+names, or a single trailing-dot prefix (`secret.`) to mean every vault event; `secret` filters by
+name, which keeps working after the secret itself is deleted. The same endpoint answers at the
+original `GET /api/mcp/audit/:guid`.
+
 ### Secret Categories
 
 | Category | Description |
