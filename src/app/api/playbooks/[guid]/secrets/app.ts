@@ -4,9 +4,34 @@ import { getAuthenticatedUser, validateApiKey } from "@/app/api/_shared/auth";
 import { getPlaybookByGuid } from "@/app/api/_shared/guards";
 import { encryptSecret, decryptSecret } from "@/lib/crypto";
 import { checkSecretDestination, normalizeAllowedHosts } from "@/lib/secret-destinations";
+import {
+  destinationHostOf,
+  recordSecretAudit,
+  auditActor,
+  type AuditContext,
+} from "@/app/api/_shared/audit";
 import type { SecretCategory, SecretMetadata } from "@/lib/supabase/types";
 
 const app = createApiApp("/api/playbooks/:guid/secrets");
+
+/**
+ * Every handler below records what it did to the vault, including what it
+ * refused. The context is built once the playbook is known, because an event
+ * with no playbook to hang on cannot be stored — a request for a GUID that does
+ * not exist is not a vault event.
+ */
+function auditContext(
+  c: { req: { header: (name: string) => string | undefined } },
+  playbookId: string,
+  user: { id: string } | null | undefined,
+  apiKey: { key_prefix?: string | null } | null | undefined,
+): AuditContext {
+  return {
+    playbookId,
+    actor: auditActor(user, apiKey),
+    requestId: c.req.header("cf-ray") || c.req.header("x-request-id") || null,
+  };
+}
 
 // Secrets responses must never be cached by browsers/CDNs.
 app.use("*", async (c, next) => {
@@ -50,7 +75,9 @@ app.get("/", async (c) => {
   // Only owner or API key holder for this playbook can access secrets
   const isOwner = user && playbook.user_id === user.id;
   const isApiKeyForPlaybook = apiKey && apiKey.playbooks.id === playbook.id;
+  const audit = auditContext(c, playbook.id, user, apiKey);
   if (!isOwner && !isApiKeyForPlaybook) {
+    await recordSecretAudit(audit, { operation: "secret.list", status: "denied", reason: "not_authorized" });
     return c.json({ error: "Forbidden: secrets are only accessible to the playbook owner" }, 403);
   }
 
@@ -67,10 +94,17 @@ app.get("/", async (c) => {
   }
 
   const { data, error } = await query.order("name");
-  if (error) return c.json({ error: error.message }, 500);
+  if (error) {
+    await recordSecretAudit(audit, { operation: "secret.list", status: "error", reason: "query_failed" });
+    return c.json({ error: error.message }, 500);
+  }
 
+  await recordSecretAudit(audit, { operation: "secret.list", status: "success" });
   return c.json(data || []);
 });
+
+// The trail these handlers write is read at GET /api/playbooks/:guid/audit,
+// alongside the federated MCP calls — see ../audit/app.ts.
 
 // POST /api/playbooks/:guid/secrets - create a new secret
 app.post("/", async (c) => {
@@ -85,7 +119,9 @@ app.post("/", async (c) => {
 
   const isOwner = user && playbook.user_id === user.id;
   const isApiKeyForPlaybook = apiKey && apiKey.playbooks.id === playbook.id;
+  const audit = auditContext(c, playbook.id, user, apiKey);
   if (!isOwner && !isApiKeyForPlaybook) {
+    await recordSecretAudit(audit, { operation: "secret.create", status: "denied", reason: "not_authorized" });
     return c.json({ error: "Forbidden" }, 403);
   }
 
@@ -119,6 +155,12 @@ app.post("/", async (c) => {
   }
 
   if (existingSecret) {
+    await recordSecretAudit(audit, {
+      operation: "secret.create",
+      status: "error",
+      secretName: normalizedName,
+      reason: "duplicate_name",
+    });
     return c.json({ error: `Secret '${normalizedName}' already exists in this playbook. Use rotate_secret to update it.` }, 409);
   }
 
@@ -131,6 +173,12 @@ app.post("/", async (c) => {
     });
   } catch (err) {
     console.error("Secrets encryption failed during create:", err);
+    await recordSecretAudit(audit, {
+      operation: "secret.create",
+      status: "error",
+      secretName: normalizedName,
+      reason: "encryption_failed",
+    });
     return c.json(
       { error: "Secrets vault is not configured correctly on the server (missing or invalid encryption key)." },
       500
@@ -158,12 +206,23 @@ app.post("/", async (c) => {
     .single();
 
   if (error) {
+    await recordSecretAudit(audit, {
+      operation: "secret.create",
+      status: "error",
+      secretName: normalizedName,
+      reason: error.code === "23505" ? "duplicate_name" : "insert_failed",
+    });
     if (error.code === "23505") {
       return c.json({ error: `Secret with name '${name.trim()}' already exists in this playbook` }, 409);
     }
     return c.json({ error: error.message }, 500);
   }
 
+  await recordSecretAudit(audit, {
+    operation: "secret.create",
+    status: "success",
+    secretName: normalizedName,
+  });
   return c.json(toMetadata(data as Record<string, unknown>), 201);
 });
 
@@ -187,8 +246,15 @@ app.get("/reveal/:name", async (c) => {
 
   const isOwner = user && playbook.user_id === user.id;
   const isApiKeyForPlaybook = apiKey && apiKey.playbooks.id === playbook.id;
-  
+  const audit = auditContext(c, playbook.id, user, apiKey);
+
   if (!isOwner && !isApiKeyForPlaybook) {
+    await recordSecretAudit(audit, {
+      operation: "secret.reveal",
+      status: "denied",
+      secretName: name,
+      reason: "not_authorized",
+    });
     return c.json({ error: "Forbidden: only the owner or playbook API key can reveal secrets" }, 403);
   }
 
@@ -201,11 +267,23 @@ app.get("/reveal/:name", async (c) => {
     .single();
 
   if (error || !secret) {
+    await recordSecretAudit(audit, {
+      operation: "secret.reveal",
+      status: "error",
+      secretName: name,
+      reason: "not_found",
+    });
     return c.json({ error: "Secret not found" }, 404);
   }
 
   if (!isOwner && apiKey) {
     if (!secret.allow_api_key_reveal) {
+      await recordSecretAudit(audit, {
+        operation: "secret.reveal",
+        status: "denied",
+        secretName: secret.name,
+        reason: "reveal_not_permitted_for_api_key",
+      });
       return c.json({ error: "Proxy Only: API keys are not permitted to reveal this secret's raw value." }, 403);
     }
   }
@@ -227,6 +305,12 @@ app.get("/reveal/:name", async (c) => {
       })
       .eq("id", secret.id);
 
+    await recordSecretAudit(audit, {
+      operation: "secret.reveal",
+      status: "success",
+      secretName: secret.name,
+    });
+
     return c.json({
       name: secret.name,
       value: plaintext,
@@ -235,6 +319,12 @@ app.get("/reveal/:name", async (c) => {
     });
   } catch (err) {
     console.error("Failed to decrypt secret:", err);
+    await recordSecretAudit(audit, {
+      operation: "secret.reveal",
+      status: "error",
+      secretName: secret.name,
+      reason: "decrypt_failed",
+    });
     return c.json({ error: "Failed to decrypt secret - encryption key may have changed" }, 500);
   }
 });
@@ -253,12 +343,24 @@ app.put("/:name", async (c) => {
 
   const isOwner = user && playbook.user_id === user.id;
   const isApiKeyForPlaybook = apiKey && apiKey.playbooks.id === playbook.id;
+  const audit = auditContext(c, playbook.id, user, apiKey);
+
+  const body = await c.req.json().catch(() => ({}));
+  const { value, description, category, expires_at, allow_api_key_reveal, allowed_hosts } = body;
+
+  // A new value makes this a rotation; anything else only edits metadata, and
+  // the two are worth telling apart when reading the trail back.
+  const operation = value && typeof value === "string" ? "secret.rotate" : "secret.update";
+
   if (!isOwner && !isApiKeyForPlaybook) {
+    await recordSecretAudit(audit, {
+      operation,
+      status: "denied",
+      secretName: name,
+      reason: "not_authorized",
+    });
     return c.json({ error: "Forbidden" }, 403);
   }
-
-  const body = await c.req.json();
-  const { value, description, category, expires_at, allow_api_key_reveal, allowed_hosts } = body;
 
   const supabase = getServiceSupabase();
 
@@ -271,6 +373,12 @@ app.put("/:name", async (c) => {
     .single();
 
   if (findError || !existing) {
+    await recordSecretAudit(audit, {
+      operation,
+      status: "error",
+      secretName: name,
+      reason: "not_found",
+    });
     return c.json({ error: "Secret not found" }, 404);
   }
 
@@ -288,6 +396,12 @@ app.put("/:name", async (c) => {
       });
     } catch (err) {
       console.error("Secrets encryption failed during rotate:", err);
+      await recordSecretAudit(audit, {
+        operation,
+        status: "error",
+        secretName: name,
+        reason: "encryption_failed",
+      });
       return c.json(
         { error: "Secrets vault is not configured correctly on the server (missing or invalid encryption key)." },
         500
@@ -314,8 +428,21 @@ app.put("/:name", async (c) => {
     .select()
     .single();
 
-  if (error) return c.json({ error: error.message }, 500);
+  if (error) {
+    await recordSecretAudit(audit, {
+      operation,
+      status: "error",
+      secretName: name,
+      reason: "update_failed",
+    });
+    return c.json({ error: error.message }, 500);
+  }
 
+  await recordSecretAudit(audit, {
+    operation,
+    status: "success",
+    secretName: name,
+  });
   return c.json(toMetadata(data as Record<string, unknown>));
 });
 
@@ -331,7 +458,14 @@ app.delete("/:name", async (c) => {
   const playbook = await getPlaybookByGuid(guid, user.id);
   if (!playbook) return c.json({ error: "Playbook not found" }, 404);
 
+  const audit = auditContext(c, playbook.id, user, null);
   if (playbook.user_id !== user.id) {
+    await recordSecretAudit(audit, {
+      operation: "secret.delete",
+      status: "denied",
+      secretName: name,
+      reason: "not_authorized",
+    });
     return c.json({ error: "Forbidden: only the owner can delete secrets" }, 403);
   }
 
@@ -342,8 +476,19 @@ app.delete("/:name", async (c) => {
     .eq("playbook_id", playbook.id)
     .eq("name", name);
 
-  if (error) return c.json({ error: error.message }, 500);
+  if (error) {
+    await recordSecretAudit(audit, {
+      operation: "secret.delete",
+      status: "error",
+      secretName: name,
+      reason: "delete_failed",
+    });
+    return c.json({ error: error.message }, 500);
+  }
 
+  // The secret id is deliberately left out: the row it pointed at is gone, and
+  // the name is what an investigation reads the trail by.
+  await recordSecretAudit(audit, { operation: "secret.delete", status: "success", secretName: name });
   return c.json({ success: true });
 });
 
@@ -361,7 +506,9 @@ app.post("/proxy", async (c) => {
 
   const isOwner = user && playbook.user_id === user.id;
   const isApiKeyForPlaybook = apiKey && apiKey.playbooks.id === playbook.id;
+  const audit = auditContext(c, playbook.id, user, apiKey);
   if (!isOwner && !isApiKeyForPlaybook) {
+    await recordSecretAudit(audit, { operation: "secret.use", status: "denied", reason: "not_authorized" });
     return c.json({ error: "Forbidden" }, 403);
   }
 
@@ -371,6 +518,10 @@ app.post("/proxy", async (c) => {
   if (!secret_name || !url) {
     return c.json({ error: "secret_name and url are required" }, 400);
   }
+
+  // Host only — see the note in _shared/audit.ts on why the rest of the
+  // URL never reaches the log.
+  const destinationHost = destinationHostOf(url);
 
   // SSRF protection
   try {
@@ -392,6 +543,13 @@ app.post("/proxy", async (c) => {
         hostname.endsWith(".internal") || hostname.endsWith(".local") ||
         hostname === "metadata.google.internal" ||
         !/^[a-z0-9.:\-\[\]]+$/i.test(hostname)) {
+      await recordSecretAudit(audit, {
+        operation: "secret.use",
+        status: "denied",
+        secretName: secret_name,
+        target: destinationHost,
+        reason: "private_destination",
+      });
       return c.json({ error: "Requests to private/internal addresses are not allowed" }, 400);
     }
   } catch {
@@ -407,11 +565,25 @@ app.post("/proxy", async (c) => {
     .single();
 
   if (secretErr || !secret) {
+    await recordSecretAudit(audit, {
+      operation: "secret.use",
+      status: "error",
+      secretName: secret_name,
+      target: destinationHost,
+      reason: "not_found",
+    });
     return c.json({ error: `Secret '${secret_name}' not found` }, 404);
   }
 
   const destination = checkSecretDestination(url, secret.allowed_hosts);
   if (!destination.allowed) {
+    await recordSecretAudit(audit, {
+      operation: "secret.use",
+      status: "denied",
+      secretName: secret.name,
+      target: destinationHost,
+      reason: "destination_not_allowed",
+    });
     return c.json({ error: destination.reason }, 403);
   }
 
@@ -423,6 +595,13 @@ app.post("/proxy", async (c) => {
       auth_tag: secret.auth_tag,
     }, playbook.user_id, { playbookId: playbook.id, secretName: secret.name });
   } catch {
+    await recordSecretAudit(audit, {
+      operation: "secret.use",
+      status: "error",
+      secretName: secret.name,
+      target: destinationHost,
+      reason: "decrypt_failed",
+    });
     return c.json({ error: "Failed to decrypt secret" }, 500);
   }
 
@@ -479,6 +658,13 @@ app.post("/proxy", async (c) => {
       })
       .eq("id", secret.id);
 
+    await recordSecretAudit(audit, {
+      operation: "secret.use",
+      status: "success",
+      secretName: secret.name,
+      target: destinationHost,
+    });
+
     return c.json({
       status: proxyRes.status,
       status_text: proxyRes.statusText,
@@ -486,6 +672,15 @@ app.post("/proxy", async (c) => {
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Request failed";
+    // The credential did leave the process, so this is an event even though the
+    // request failed. The upstream message stays out of the row.
+    await recordSecretAudit(audit, {
+      operation: "secret.use",
+      status: "error",
+      secretName: secret.name,
+      target: destinationHost,
+      reason: "request_failed",
+    });
     return c.json({ error: `HTTP request failed: ${msg}` }, 502);
   }
 });

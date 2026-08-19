@@ -234,7 +234,15 @@ GET    /api/playbooks/:guid/secrets/reveal/:name
 
 # Proxy external requests using a secret
 POST   /api/playbooks/:guid/secrets/proxy
+
+# Audit trail — shared with federated MCP calls
+GET    /api/playbooks/:guid/audit?operation=secret.
 ```
+
+Every vault operation is recorded, refusals included: what was done, to which secret, by the
+owner or by which API key prefix, and for `secret.use` the destination host. An entry never
+holds a secret value, a full outbound URL, or a key. Owner access only — a playbook API key
+performs vault operations but cannot read the record of them.
 
 ### User profile and user API keys (Management)
 
@@ -348,7 +356,7 @@ agentplaybooks/
 
 - playbooks: core entity (includes visibility enum: private, public, unlisted; persona fields for agent identity and `instructions` for always-on project rules)
 - mcp_server_secrets: encrypted credentials for federated MCP/OpenAPI servers (service-role only)
-- mcp_proxy_audit_logs: owner-readable audit trail for federated calls
+- audit_logs: owner-readable audit trail for federated MCP calls and secrets vault operations (`secret.*`); never holds values, full URLs or keys. Renamed from `mcp_proxy_audit_logs`.
 - skills: skill definitions and optional SKILL.md content
 - skill_attachments: secure attachment storage for skills
 - mcp_servers: MCP tools and resources

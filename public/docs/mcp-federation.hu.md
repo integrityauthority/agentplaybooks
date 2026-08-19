@@ -73,4 +73,4 @@ Az egyes szerverek hitelesítő adatait ebből az értékből HKDF-fel származt
 
 Az `access: "public"` upstream költséget tehet nyilvánosan elérhetővé. Javasolt a `playbook_api_key`; ehhez a kliensnek `tools:call` vagy `full` jogosultságú playbookkulcs kell.
 
-A tulajdonos a metaadat-alapú hívástörténetet a `GET /api/mcp/audit/PLAYBOOK_GUID?limit=100` végponton olvashatja munkamenettel vagy `playbooks:read` jogosultságú felhasználói API-kulccsal.
+A tulajdonos a metaadat-alapú hívástörténetet a `GET /api/playbooks/PLAYBOOK_GUID/audit?limit=100` (a korábbi `GET /api/mcp/audit/PLAYBOOK_GUID` továbbra is ugyanezt válaszolja) végponton olvashatja munkamenettel vagy `playbooks:read` jogosultságú felhasználói API-kulccsal.

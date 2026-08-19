@@ -5,6 +5,14 @@ import { getServiceSupabase, getSupabase } from "@/app/api/_shared/supabase";
 import type { McpResource, McpTool, MCPServer, Playbook, MemoryTier, MemoryType, MemoryStatus, CanvasSection, SecretCategory } from "@/lib/supabase/types";
 import { encryptSecret, decryptSecret } from "@/lib/crypto";
 import { checkSecretDestination } from "@/lib/secret-destinations";
+import {
+  auditActor,
+  beginSecretAudit,
+  destinationHostOf,
+  federationAuditWriter,
+  flushSecretAudit,
+  type SecretAuditDraft,
+} from "@/app/api/_shared/audit";
 import { PLAYBOOK_TOOLS } from "@/app/api/_shared/playbook-tools";
 import {
   callFederatedTool,
@@ -13,7 +21,6 @@ import {
   listFederatedTools,
   parseFederatedResourceUri,
   readFederatedResource,
-  type FederationAuditEvent,
 } from "@/lib/mcp/federation";
 import { decryptMcpSecrets } from "@/lib/mcp/secrets";
 import { composePlaybookSystemPrompt } from "@/lib/playbook-prompt";
@@ -61,26 +68,10 @@ async function loadMcpSecrets(serverId: string) {
   return data ? decryptMcpSecrets(data.encrypted_payload, data.iv, serverId) : {};
 }
 
-function auditWriter(playbookId: string, requestId?: string) {
-  return async (event: FederationAuditEvent) => {
-    const { error } = await getServiceSupabase().from("mcp_proxy_audit_logs").insert({
-      playbook_id: playbookId,
-      mcp_server_id: event.serverId,
-      operation: event.operation,
-      target: event.target || null,
-      status: event.status,
-      latency_ms: event.latencyMs,
-      error_code: event.errorCode || null,
-      request_id: requestId || null,
-    });
-    if (error) console.error("Failed to write MCP proxy audit log", error.message);
-  };
-}
-
 async function federationOptions(server: MCPServer, playbookId: string, requestId?: string) {
   return {
     secrets: await loadMcpSecrets(server.id),
-    audit: auditWriter(playbookId, requestId),
+    audit: federationAuditWriter(playbookId, requestId),
   };
 }
 
@@ -832,6 +823,22 @@ use_secret({
           });
         }
       }
+
+      // The secret tools all throw on refusal into the one catch below, so the
+      // audit event is built as the case proceeds and flushed at whichever exit
+      // is reached. `status` starts at "denied" and becomes "error" once the
+      // caller's key has been accepted, which is what lets the shared catch
+      // classify a failure without reading its own error messages.
+      let secretAudit: SecretAuditDraft | null = null;
+      // The key prefix is only known once validateApiKey accepts it; a refused
+      // caller stays anonymous rather than having a rejected credential's
+      // fragments copied into the trail.
+      let secretAuditKeyPrefix: string | null = null;
+      const secretAuditContext = () => ({
+        playbookId: playbook.id,
+        actor: auditActor(null, secretAuditKeyPrefix ? { key_prefix: secretAuditKeyPrefix } : null),
+        requestId: c.req.header("cf-ray") || c.req.header("x-request-id") || null,
+      });
 
       try {
         let result: unknown;
@@ -2198,10 +2205,14 @@ use_secret({
 
           // ===== Secrets Tools =====
           case "list_secrets": {
+            secretAudit = beginSecretAudit("secret.list");
             const secretsApiKey = await validateApiKey(c.req.raw, "secrets:read");
             if (!secretsApiKey || secretsApiKey.playbooks.id !== playbook.id) {
+              secretAudit.reason = "not_authorized";
               throw new Error("API key with secrets:read or full permission required");
             }
+            secretAuditKeyPrefix = secretsApiKey.key_prefix;
+            secretAudit.status = "error";
 
             let secretsQuery = serviceSupabase
               .from("secrets")
@@ -2221,13 +2232,20 @@ use_secret({
           case "use_secret": {
             // Proxy pattern: decrypt secret server-side, inject into HTTP request,
             // return only the response. The agent NEVER sees the secret value.
+            secretAudit = beginSecretAudit("secret.use");
             const useSecretApiKey = await validateApiKey(c.req.raw, "secrets:read");
             if (!useSecretApiKey || useSecretApiKey.playbooks.id !== playbook.id) {
+              secretAudit.reason = "not_authorized";
               throw new Error("API key with secrets:read or full permission required");
             }
+            secretAuditKeyPrefix = useSecretApiKey.key_prefix;
+            secretAudit.status = "error";
 
             const useSecretName = args.secret_name as string;
             const useUrl = args.url as string;
+            secretAudit.secretName = useSecretName || null;
+            // Host only — the path and query stay out of the trail.
+            secretAudit.target = destinationHostOf(useUrl);
             if (!useSecretName || !useUrl) throw new Error("secret_name and url are required");
 
             // Validate URL to prevent SSRF
@@ -2250,6 +2268,8 @@ use_secret({
                   hostname.endsWith(".internal") || hostname.endsWith(".local") ||
                   hostname === "metadata.google.internal" ||
                   !/^[a-z0-9.:\-\[\]]+$/i.test(hostname)) {
+                secretAudit.status = "denied";
+                secretAudit.reason = "private_destination";
                 throw new Error("Requests to private/internal addresses are not allowed");
               }
             } catch (e) {
@@ -2266,11 +2286,14 @@ use_secret({
               .single();
 
             if (useSecretError || !useSecretData) {
+              secretAudit.reason = "not_found";
               throw new Error(`Secret '${useSecretName}' not found`);
             }
 
             const useDestination = checkSecretDestination(useUrl, useSecretData.allowed_hosts);
             if (!useDestination.allowed) {
+              secretAudit.status = "denied";
+              secretAudit.reason = "destination_not_allowed";
               throw new Error(useDestination.reason);
             }
 
@@ -2350,13 +2373,18 @@ use_secret({
           }
 
           case "store_secret": {
+            secretAudit = beginSecretAudit("secret.create");
             const storeSecretApiKey = await validateApiKey(c.req.raw, "secrets:write");
             if (!storeSecretApiKey || storeSecretApiKey.playbooks.id !== playbook.id) {
+              secretAudit.reason = "not_authorized";
               throw new Error("API key with secrets:write or full permission required");
             }
+            secretAuditKeyPrefix = storeSecretApiKey.key_prefix;
+            secretAudit.status = "error";
 
             const storeName = args.name as string;
             const storeValue = args.value as string;
+            secretAudit.secretName = storeName ? storeName.trim() : null;
             if (!storeName || !storeValue) throw new Error("name and value are required");
 
             const normalizedStoreName = storeName.trim();
@@ -2371,6 +2399,7 @@ use_secret({
               .single();
 
             if (existingSecret) {
+              secretAudit.reason = "duplicate_name";
               throw new Error(`Secret '${storeName}' already exists. Use rotate_secret to update.`);
             }
 
@@ -2398,6 +2427,7 @@ use_secret({
               .single();
 
             if (storeError) {
+              secretAudit.reason = storeError.code === "23505" ? "duplicate_name" : "insert_failed";
               if (storeError.code === "23505") {
                 throw new Error(`Secret '${storeName}' already exists. Use rotate_secret to update.`);
               }
@@ -2408,13 +2438,18 @@ use_secret({
           }
 
           case "rotate_secret": {
+            secretAudit = beginSecretAudit("secret.rotate");
             const rotateApiKey = await validateApiKey(c.req.raw, "secrets:write");
             if (!rotateApiKey || rotateApiKey.playbooks.id !== playbook.id) {
+              secretAudit.reason = "not_authorized";
               throw new Error("API key with secrets:write or full permission required");
             }
+            secretAuditKeyPrefix = rotateApiKey.key_prefix;
+            secretAudit.status = "error";
 
             const rotateName = args.name as string;
             const rotateValue = args.value as string;
+            secretAudit.secretName = rotateName || null;
             if (!rotateName || !rotateValue) throw new Error("name and value are required");
 
             const { data: existingSecret } = await serviceSupabase
@@ -2424,7 +2459,10 @@ use_secret({
               .eq("name", rotateName)
               .single();
 
-            if (!existingSecret) throw new Error(`Secret '${rotateName}' not found`);
+            if (!existingSecret) {
+              secretAudit.reason = "not_found";
+              throw new Error(`Secret '${rotateName}' not found`);
+            }
 
             const rotateEncrypted = await encryptSecret(rotateValue, playbook.user_id, {
               playbookId: playbook.id,
@@ -2444,18 +2482,26 @@ use_secret({
               .select("id, name, rotated_at, updated_at")
               .single();
 
-            if (rotateError) throw new Error(rotateError.message);
+            if (rotateError) {
+              secretAudit.reason = "update_failed";
+              throw new Error(rotateError.message);
+            }
             result = rotatedSecret;
             break;
           }
 
           case "delete_secret": {
+            secretAudit = beginSecretAudit("secret.delete");
             const deleteSecretApiKey = await validateApiKey(c.req.raw, "secrets:write");
             if (!deleteSecretApiKey || deleteSecretApiKey.playbooks.id !== playbook.id) {
+              secretAudit.reason = "not_authorized";
               throw new Error("API key with secrets:write or full permission required");
             }
+            secretAuditKeyPrefix = deleteSecretApiKey.key_prefix;
+            secretAudit.status = "error";
 
             const deleteSecretName = args.name as string;
+            secretAudit.secretName = deleteSecretName || null;
             if (!deleteSecretName) throw new Error("name is required");
 
             const { error: deleteSecretError } = await serviceSupabase
@@ -2464,7 +2510,10 @@ use_secret({
               .eq("playbook_id", playbook.id)
               .eq("name", deleteSecretName);
 
-            if (deleteSecretError) throw new Error(deleteSecretError.message);
+            if (deleteSecretError) {
+              secretAudit.reason = "delete_failed";
+              throw new Error(deleteSecretError.message);
+            }
             result = { success: true, deleted: deleteSecretName };
             break;
           }
@@ -2473,6 +2522,7 @@ use_secret({
             throw new Error(`Unknown tool: ${toolName}. Use list_skills / get_skill to access skill definitions.`);
         }
 
+        await flushSecretAudit(secretAuditContext(), secretAudit, "success");
         return c.json({
           jsonrpc: "2.0",
           id,
@@ -2487,6 +2537,9 @@ use_secret({
             : typeof error === "string"
               ? error
               : "Tool execution failed";
+        // The message is not stored: it interpolates its inputs, and one of
+        // those inputs is the outbound URL.
+        await flushSecretAudit(secretAuditContext(), secretAudit, "failure", "tool_error");
         return c.json({
           jsonrpc: "2.0",
           id,
