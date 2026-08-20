@@ -27,6 +27,13 @@ import { projectPlaybookToolsForUser } from "@/app/api/_shared/playbook-tools";
 import { operationPathsFromTools } from "@/app/api/_shared/operation-openapi";
 import { ACCOUNT_TOOLS } from "@/app/api/_shared/account-tools";
 
+/**
+ * Roles a playbook API key can hold, mirroring the api_keys_role_check
+ * constraint. Kept here so an unknown role is refused with a clear 400 rather
+ * than reaching the database as a constraint violation.
+ */
+const API_KEY_ROLES = ["viewer", "coworker", "admin"] as const;
+
 // Types
 type Bindings = {
   SUPABASE_URL: string;
@@ -554,7 +561,17 @@ app.post("/playbooks/:id/api-keys", async (c) => {
   }
 
   const body = await c.req.json().catch(() => ({}));
-  const { name, permissions, expires_at } = body;
+  const { name, role, permissions, expires_at } = body;
+
+  // The role is what actually gates a key, so a request asking for one must
+  // either get it or be told why not. Dropping it silently left every key on
+  // the column default — a caller who picked "coworker" got a viewer.
+  if (role !== undefined && !API_KEY_ROLES.includes(role)) {
+    return c.json(
+      { error: `Invalid role '${role}'. Expected one of: ${API_KEY_ROLES.join(", ")}.` },
+      400
+    );
+  }
 
   // Generate the API key
   const plainKey = generateApiKey();
@@ -570,11 +587,12 @@ app.post("/playbooks/:id/api-keys", async (c) => {
       key_hash: keyHash,
       key_prefix: keyPrefix,
       name: name || null,
+      role: role || "viewer",
       permissions: permissions || ["memory:read", "memory:write"],
       expires_at: expires_at || null,
       is_active: true,
     })
-    .select("id, key_prefix, name, permissions, expires_at, is_active, created_at")
+    .select("id, key_prefix, name, role, permissions, expires_at, is_active, created_at")
     .single();
 
   if (error) {
