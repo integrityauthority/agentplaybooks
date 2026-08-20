@@ -4,11 +4,9 @@ import crypto from "node:crypto";
 import http from "node:http";
 import {
   buildAuthorizeUrl,
-  buildTokenRequestBody,
   interpretCallback,
   pkcePair,
   randomState,
-  readRefreshToken,
   startCallbackServer,
 } from "../src/oauth.js";
 
@@ -121,44 +119,6 @@ test("a callback with the right state but no code is not a success", () => {
   const result = interpretCallback(query("state=mine"), "mine");
   assert.equal(result.ok, false);
   assert.equal(result.reason, "no-code");
-});
-
-test("the token request sends the verifier and the code", () => {
-  const body = buildTokenRequestBody({
-    code: "the-code",
-    redirectUri: "http://127.0.0.1:5555/callback",
-    clientId: "c",
-    clientSecret: "s",
-    verifier: "the-verifier",
-  });
-  assert.equal(body.get("grant_type"), "authorization_code");
-  assert.equal(body.get("code"), "the-code");
-  assert.equal(body.get("code_verifier"), "the-verifier");
-  assert.equal(body.get("client_secret"), "s");
-});
-
-test("a public client sends no client_secret at all", () => {
-  // Some providers reject an empty client_secret rather than ignoring it.
-  const body = buildTokenRequestBody({
-    code: "c", redirectUri: "r", clientId: "id", clientSecret: null, verifier: "v",
-  });
-  assert.equal(body.has("client_secret"), false);
-});
-
-test("a response without a refresh token is its own named failure", () => {
-  // The exchange succeeds and an access token comes back, so this would
-  // otherwise surface much later as a missing secret.
-  const result = readRefreshToken({ access_token: "at", expires_in: 3600 });
-  assert.equal(result.ok, false);
-  assert.equal(result.reason, "no-refresh-token");
-  assert.match(result.message, /access_type=offline/);
-});
-
-test("a refresh token is read out when present", () => {
-  assert.deepEqual(readRefreshToken({ access_token: "at", refresh_token: "rt" }), {
-    ok: true,
-    refreshToken: "rt",
-  });
 });
 
 test("the callback server listens only on loopback", async () => {

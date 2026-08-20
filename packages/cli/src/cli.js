@@ -2,7 +2,7 @@ import os from "node:os";
 import path from "node:path";
 import readline from "node:readline";
 import { printDoctor, publicReport, runDoctor, runGlobalDoctor } from "./doctor.js";
-import { fetchTemplate, obtainRefreshToken, planConsent } from "./auth-command.js";
+import { completeConsentViaServer, fetchTemplate, planConsent } from "./auth-command.js";
 import { applySync, planGlobalSync, planSync, printSyncPlan } from "./sync.js";
 import {
   applyPull,
@@ -648,44 +648,36 @@ export async function run(args) {
 
     const template = await fetchTemplate(url, provider);
     const plan = planConsent(template);
+    const { guid, playbookKey } = await resolveVaultAccess(url, root, flags);
 
-    // The client id identifies an OAuth app the person registered themselves —
-    // the catalogue holds only a placeholder for it, because there is no shared
-    // app to point at. It is not a secret, so a flag or the environment is fine.
+    // The client id names an OAuth app the person registered themselves — the
+    // catalogue holds only a placeholder, because there is no shared app to
+    // point at. It is not a secret, so a flag or the environment is fine.
     const clientId = (typeof flags.get("--client-id") === "string" ? flags.get("--client-id") : null)
       || process.env.AGENTPLAYBOOKS_OAUTH_CLIENT_ID
       || await promptForKey(`Client ID for your ${template.name} OAuth app: `);
     if (!clientId) throw new Error("A client ID is required.");
 
-    const { guid, playbookKey } = await resolveVaultAccess(url, root, flags);
+    // The client secret is never handled here. It lives in the vault and the
+    // server reads it to complete the exchange, so it does not transit this
+    // machine at all — and neither does the refresh token that comes back.
+    if (plan.clientSecretName) {
+      console.log(`${plan.clientSecretName} will be read from the vault of ${guid}; it is not needed here.`);
+    }
 
-    // The client secret is a secret, so it comes from the vault or the
-    // environment — never from a flag, where it would land in shell history and
-    // in process listings.
-    const clientSecret = plan.clientSecretName
-      ? (process.env[plan.clientSecretName] ?? null)
-      : null;
-
-    const refreshToken = await obtainRefreshToken(plan, {
+    const result = await completeConsentViaServer(plan, {
+      url,
+      guid,
+      playbookKey,
       clientId,
-      clientSecret,
       openBrowser,
       log: (line) => console.log(line),
     });
 
-    const vaultSecrets = await listVaultSecrets(url, guid, playbookKey);
-    const existing = vaultSecrets.find((secret) => secret.name === plan.refreshSecretName);
-    await createOrRotateSecret(url, guid, playbookKey, {
-      name: plan.refreshSecretName,
-      value: refreshToken,
-      existing,
-      category: "token",
-      description: `${template.name} refresh token (obtained by 'agentplaybooks auth')`,
-    });
-    console.log(`Stored ${plan.refreshSecretName} in the vault of ${guid}. The value was not printed.`);
-    if (plan.clientSecretName && !vaultSecrets.some((s) => s.name === plan.clientSecretName)) {
-      console.log(`Federation also needs ${plan.clientSecretName}. Store it with: agentplaybooks secrets push ${plan.clientSecretName}`);
-    }
+    console.log(result.rotated
+      ? `Rotated ${result.stored} in the vault of ${guid}.`
+      : `Stored ${result.stored} in the vault of ${guid}.`);
+    console.log("The refresh token was exchanged server-side and never reached this machine.");
     return;
   }
 

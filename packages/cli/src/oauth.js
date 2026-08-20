@@ -91,48 +91,6 @@ export function interpretCallback(query, expectedState) {
 }
 
 /**
- * The body for the code exchange. The client secret is included only when the
- * app has one: a public client using PKCE does not, and sending an empty one is
- * a request some providers reject outright.
- */
-export function buildTokenRequestBody({ code, redirectUri, clientId, clientSecret, verifier }) {
-  const body = new URLSearchParams({
-    grant_type: "authorization_code",
-    code,
-    redirect_uri: redirectUri,
-    client_id: clientId,
-    code_verifier: verifier,
-  });
-  if (clientSecret) body.set("client_secret", clientSecret);
-  return body;
-}
-
-/**
- * Pull the refresh token out of a token response.
- *
- * A response without one is the failure people actually hit, and it is silent:
- * the exchange succeeds, an access token comes back, and the thing that was
- * needed is simply absent — usually because the authorize request lacked
- * access_type=offline, or because the provider only issues it on first consent.
- * So it is named as its own outcome rather than surfacing later as a missing
- * secret.
- */
-export function readRefreshToken(payload) {
-  const refreshToken = typeof payload?.refresh_token === "string" ? payload.refresh_token : null;
-  if (!refreshToken) {
-    return {
-      ok: false,
-      reason: "no-refresh-token",
-      message:
-        "The provider returned an access token but no refresh token. Most often the "
-        + "authorize request needs access_type=offline, or the provider only issues one on "
-        + "first consent — revoke the app's access and try again.",
-    };
-  }
-  return { ok: true, refreshToken };
-}
-
-/**
  * Start the loopback listener and report the port it took, without waiting for
  * the redirect. The port has to be known first: it goes into redirect_uri, which
  * goes into the authorize URL, which is what the browser opens.

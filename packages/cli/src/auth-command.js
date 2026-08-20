@@ -1,10 +1,8 @@
 import {
   buildAuthorizeUrl,
-  buildTokenRequestBody,
   interpretCallback,
   pkcePair,
   randomState,
-  readRefreshToken,
   startCallbackServer,
 } from "./oauth.js";
 
@@ -55,8 +53,8 @@ export function planConsent(template) {
     throw new Error(`'${template.id}' does not say which secret to store the refresh token as.`);
   }
   return {
+    templateId: template.id,
     authorizationUrl: template.authorization_url,
-    tokenUrl: auth.token_url,
     scopes: auth.scopes ?? [],
     extraParams: template.authorization_params ?? {},
     refreshSecretName,
@@ -68,14 +66,19 @@ export function planConsent(template) {
 }
 
 /**
- * Run the consent flow and return the refresh token.
+ * Run the consent flow and hand the authorization code to the server, which
+ * completes the exchange.
  *
- * The token is returned rather than printed or stored here: the caller decides
- * where it goes, and a value that is never logged cannot leak through a log.
+ * The CLI deliberately does not exchange the code itself. Doing so would put
+ * two credentials on this machine — the client secret on the way out and the
+ * refresh token on the way back — and both belong in the vault. What leaves
+ * here is the code and the verifier, which are single-use and short-lived.
  */
-export async function obtainRefreshToken(plan, {
+export async function completeConsentViaServer(plan, {
+  url,
+  guid,
+  playbookKey,
   clientId,
-  clientSecret = null,
   openBrowser,
   fetchImpl = fetch,
   startServer = startCallbackServer,
@@ -107,27 +110,25 @@ export async function obtainRefreshToken(plan, {
     const callback = interpretCallback(query, state);
     if (!callback.ok) throw new Error(callback.message);
 
-    const response = await fetchImpl(plan.tokenUrl, {
+    const response = await fetchImpl(`${url}/api/playbooks/${guid}/secrets/oauth-exchange`, {
       method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
-      body: buildTokenRequestBody({
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${playbookKey}`,
+      },
+      body: JSON.stringify({
+        template_id: plan.templateId,
         code: callback.code,
-        redirectUri,
-        clientId,
-        clientSecret,
-        verifier,
+        code_verifier: verifier,
+        redirect_uri: redirectUri,
+        client_id: clientId,
       }),
     });
     const payload = await response.json().catch(() => null);
     if (!response.ok) {
-      // A provider's own words are more useful than our paraphrase, but the
-      // body can contain the code, so only the named error fields are shown.
-      const detail = payload?.error_description || payload?.error || `HTTP ${response.status}`;
-      throw new Error(`The token exchange failed: ${detail}`);
+      throw new Error(payload?.error || `The server could not complete the exchange (HTTP ${response.status}).`);
     }
-    const token = readRefreshToken(payload);
-    if (!token.ok) throw new Error(token.message);
-    return token.refreshToken;
+    return payload;
   } finally {
     server.close();
   }
