@@ -2,11 +2,14 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "agentplaybooks",
   "main": ".open-next/worker.js",
-  "compatibility_date": "2025-01-01",
-  "compatibility_flags": ["nodejs_compat"],
+  // OpenNext requires at least 2025-05-05, below which FinalizationRegistry is
+  // not available in the runtime.
+  "compatibility_date": "2025-05-05",
+  // nodejs_compat is required by the adapter. global_fetch_strictly_public is
+  // documented alongside it and is what lets the app fetch its own URLs.
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "assets": {
     "directory": ".open-next/assets",
     "binding": "ASSETS"
   }
 }
-
