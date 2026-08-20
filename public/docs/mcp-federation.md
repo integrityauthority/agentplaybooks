@@ -97,6 +97,25 @@ that federation makes for you:
 store both on the Secrets tab. A public client using PKCE has no client secret —
 omit `client_secret` and only the refresh token is required.
 
+#### Getting the first refresh token
+
+Federation renews a refresh token forever, but it cannot obtain the first one:
+that needs a browser and a redirect target, and a Worker has neither. The CLI
+does it once:
+
+```bash
+agentplaybooks auth gmail --client-id=your-app.apps.googleusercontent.com
+```
+
+It reads the template from `/api/connections`, runs authorization-code + PKCE
+against a loopback redirect on `127.0.0.1`, and stores the result under the name
+the template declares — so nothing has to be pasted anywhere. The refresh token
+is never printed.
+
+The client **secret** is read from the environment (named after the template's
+`client_secret`), never from a flag, where it would land in shell history and in
+process listings. A public PKCE client has no secret and needs none.
+
 Access tokens are cached until shortly before they expire. Because some
 providers rotate the refresh token on each use, the cache key includes a digest
 of the token rather than the token itself, so a renewed token cannot read a stale

@@ -60,6 +60,20 @@ export type ConnectionTemplate = {
    * obtain the first one — that needs a browser, which belongs in the CLI.
    */
   requiresConsent?: boolean;
+  /**
+   * The provider's authorization endpoint. Required alongside requiresConsent:
+   * `token_url` in the transport config is where a token is *exchanged*, which
+   * says nothing about where consent is *asked*, and `agentplaybooks auth`
+   * needs both.
+   */
+  authorization_url?: string;
+  /**
+   * Extra query parameters the provider needs on the authorize request to
+   * actually return a refresh token. Google will not issue one without
+   * access_type=offline, and returns it only on the first consent unless
+   * prompt=consent.
+   */
+  authorization_params?: Record<string, string>;
 };
 
 /**
@@ -193,6 +207,8 @@ const USER_SCOPED_OAUTH: ConnectionTemplate[] = [
     docs: "https://developers.google.com/gmail/api/guides",
     transport_type: "openapi",
     requiresConsent: true,
+    authorization_url: "https://accounts.google.com/o/oauth2/v2/auth",
+    authorization_params: { access_type: "offline", prompt: "consent" },
     transport_config: {
       base_url: "https://gmail.googleapis.com",
       auth: {
@@ -229,6 +245,8 @@ const USER_SCOPED_OAUTH: ConnectionTemplate[] = [
     docs: "https://developers.google.com/calendar/api/guides/overview",
     transport_type: "openapi",
     requiresConsent: true,
+    authorization_url: "https://accounts.google.com/o/oauth2/v2/auth",
+    authorization_params: { access_type: "offline", prompt: "consent" },
     transport_config: {
       base_url: "https://www.googleapis.com/calendar/v3",
       auth: {
@@ -263,6 +281,7 @@ const USER_SCOPED_OAUTH: ConnectionTemplate[] = [
     docs: "https://learn.microsoft.com/en-us/linkedin/shared/authentication/authorization-code-flow",
     transport_type: "openapi",
     requiresConsent: true,
+    authorization_url: "https://www.linkedin.com/oauth/v2/authorization",
     transport_config: {
       base_url: "https://api.linkedin.com",
       auth: {
@@ -298,6 +317,7 @@ const USER_SCOPED_OAUTH: ConnectionTemplate[] = [
     docs: "https://docs.x.com/resources/fundamentals/authentication",
     transport_type: "openapi",
     requiresConsent: true,
+    authorization_url: "https://x.com/i/oauth2/authorize",
     transport_config: {
       base_url: "https://api.x.com/2",
       auth: {
