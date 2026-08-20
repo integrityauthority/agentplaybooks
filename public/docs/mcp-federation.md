@@ -21,6 +21,31 @@ The endpoint discovers upstream tools, namespaces them as `ext__SERVER_ID__TOOL`
 
 Private, loopback, link-local, `.local`, and `.internal` targets are blocked. HTTPS is required unless `allow_insecure_http` is explicitly enabled for development.
 
+## Starting from a template
+
+`GET /api/connections` returns a curated catalogue of connection templates, so
+adding a well-known service is picking a name rather than writing transport JSON
+from scratch. Filter with `?category=` or fetch one with `?id=`.
+
+A template is not a credential. Every entry references its secrets **by name**
+and expects those names on the playbook's Secrets tab — the same resolution a
+federated call uses at runtime. The endpoint is public because there is nothing
+in it to protect.
+
+Each entry carries:
+
+| Field | Meaning |
+|---|---|
+| `transport_type`, `transport_config` | Paste-ready, with secret *names* in the auth block |
+| `secrets[]` | Every name the config references, with where to get the value |
+| `placeholders[]` | Values you must fill in first, such as a project ref |
+| `requiresConsent` | True when the credential needs a one-time OAuth consent |
+| `source` | `live-config` if taken from a server already working in production, `provider-docs` otherwise |
+
+The catalogue is checked against the real resolver in CI: a template cannot
+declare a secret federation would never look up, or reference one it forgot to
+document. That is what keeps the data from rotting quietly.
+
 ## MCP configuration
 
 Select **MCP Servers → Connection → MCP Streamable HTTP**:
