@@ -40,11 +40,43 @@ Select **MCP Servers → Connection → MCP Streamable HTTP**:
 }
 ```
 
-Save the sensitive value separately in **Encrypted secrets**:
+Store the sensitive value on the playbook's **Secrets** tab under the name the
+config references — here `client_secret` — and it resolves at call time. The
+value never appears in the transport config.
+
+### User-scoped APIs: `oauth2_refresh_token`
+
+`client_credentials` covers machine-to-machine APIs. Services that act *as a
+user* — Gmail, LinkedIn, X, Facebook — need a token obtained with that user's
+consent, and consent needs a browser redirect and a callback URL that a playbook
+has nowhere to host.
+
+The way through is that consent is a **one-time** step. Obtain a refresh token
+out of band, store it in the vault, and renewal from then on is an ordinary POST
+that federation makes for you:
 
 ```json
-{ "client_secret": "replace-me" }
+{
+  "url": "https://gmail.example.com/mcp",
+  "auth": {
+    "type": "oauth2_refresh_token",
+    "token_url": "https://oauth2.googleapis.com/token",
+    "client_id": "your-app.apps.googleusercontent.com",
+    "client_secret": "GOOGLE_CLIENT_SECRET",
+    "refresh_token_secret": "GMAIL_REFRESH_TOKEN"
+  }
+}
 ```
+
+`refresh_token_secret` and `client_secret` are **secret names**, not values;
+store both on the Secrets tab. A public client using PKCE has no client secret —
+omit `client_secret` and only the refresh token is required.
+
+Access tokens are cached until shortly before they expire. Because some
+providers rotate the refresh token on each use, the cache key includes a digest
+of the token rather than the token itself, so a renewed token cannot read a stale
+entry. If the named secret is absent, the error names it (`Missing secret:
+GMAIL_REFRESH_TOKEN`) instead of failing as a generic upstream error.
 
 For bearer auth use `{"type":"bearer","token_secret":"token"}` and store `{"token":"..."}`. For an API key, configure `type`, `header`, `prefix`, and `api_key_secret`.
 
