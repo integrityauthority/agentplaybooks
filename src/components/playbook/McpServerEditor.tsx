@@ -98,9 +98,6 @@ export function McpServerEditor({ mcpServer, playbookGuid, storage, onUpdate, on
   const [transportConfigJson, setTransportConfigJson] = useState(
     JSON.stringify(mcpServer.transport_config || DEFAULT_TRANSPORT_CONFIG, null, 2)
   );
-  const [secretsJson, setSecretsJson] = useState("{}");
-  const [secretsChanged, setSecretsChanged] = useState(false);
-  const [hasStoredSecrets, setHasStoredSecrets] = useState(false);
   const [vaultSecretNames, setVaultSecretNames] = useState<string[]>([]);
   const [vaultReferenceName, setVaultReferenceName] = useState("");
   const [testing, setTesting] = useState(false);
@@ -118,7 +115,7 @@ export function McpServerEditor({ mcpServer, playbookGuid, storage, onUpdate, on
   // Derived, not stored: as state written from an effect this lagged a render,
   // so Save was briefly enabled on invalid JSON and disabled just after it
   // became valid again.
-  const jsonError = [toolsJson, resourcesJson, transportConfigJson, secretsJson]
+  const jsonError = [toolsJson, resourcesJson, transportConfigJson]
     .every((text) => parses(text)) ? null : "Invalid JSON";
 
   // Whether anything actually differs from what is stored. Derived rather than
@@ -133,26 +130,7 @@ export function McpServerEditor({ mcpServer, playbookGuid, storage, onUpdate, on
     transportType !== (mcpServer.transport_type || "http") ||
     !sameJsonValue(toolsJson, mcpServer.tools || []) ||
     !sameJsonValue(resourcesJson, mcpServer.resources || []) ||
-    !sameJsonValue(transportConfigJson, mcpServer.transport_config || DEFAULT_TRANSPORT_CONFIG) ||
-    secretsChanged;
-
-  useEffect(() => {
-    if (readOnly) return;
-    const loadSecretStatus = async () => {
-      const supabase = createBrowserClient();
-      const { data } = await supabase.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) return;
-      const response = await fetch(`/api/mcp/config/${mcpServer.id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (response.ok) {
-        const config = await response.json() as { has_secrets?: boolean };
-        setHasStoredSecrets(!!config.has_secrets);
-      }
-    };
-    void loadSecretStatus();
-  }, [mcpServer.id, readOnly]);
+    !sameJsonValue(transportConfigJson, mcpServer.transport_config || DEFAULT_TRANSPORT_CONFIG);
 
   // Names in the playbook's Secrets vault, so auth references can be picked by
   // name instead of retyped. Metadata only; values never reach the browser
@@ -240,7 +218,6 @@ export function McpServerEditor({ mcpServer, playbookGuid, storage, onUpdate, on
       const parsedTools = JSON.parse(toolsJson);
       const parsedResources = JSON.parse(resourcesJson);
       const parsedTransportConfig = JSON.parse(transportConfigJson);
-      const parsedSecrets = JSON.parse(secretsJson);
 
       const updated = await storage.updateMcpServer(mcpServer.id, {
         name,
@@ -252,21 +229,6 @@ export function McpServerEditor({ mcpServer, playbookGuid, storage, onUpdate, on
       });
 
       if (updated) {
-        if (secretsChanged) {
-          const supabase = createBrowserClient();
-          const { data } = await supabase.auth.getSession();
-          const token = data.session?.access_token;
-          if (!token) throw new Error("Authentication required to save MCP secrets");
-          const response = await fetch(`/api/mcp/config/${mcpServer.id}`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-            body: JSON.stringify({ secrets: parsedSecrets }),
-          });
-          if (!response.ok) throw new Error("Failed to save encrypted MCP secrets");
-          setSecretsJson("{}");
-          setSecretsChanged(false);
-          setHasStoredSecrets(true);
-        }
         onUpdate(updated);
       }
     } catch (e) {
@@ -274,7 +236,7 @@ export function McpServerEditor({ mcpServer, playbookGuid, storage, onUpdate, on
     } finally {
       setSaving(false);
     }
-  }, [name, description, toolsJson, resourcesJson, transportType, transportConfigJson, secretsJson, secretsChanged, mcpServer.id, jsonError, onUpdate, storage]);
+  }, [name, description, toolsJson, resourcesJson, transportType, transportConfigJson, mcpServer.id, jsonError, onUpdate, storage]);
 
   // Debounced auto-save
   useEffect(() => {
@@ -595,30 +557,7 @@ export function McpServerEditor({ mcpServer, playbookGuid, storage, onUpdate, on
                         </div>
                       )}
                       <p className="mt-2 text-xs text-slate-500">
-                        Auth secrets resolve by name: this server&apos;s own encrypted secrets first, then the playbook&apos;s Secrets vault. Store a value once on the Secrets tab and reference it here — no need to paste it again.
-                      </p>
-                    </div>
-                  )}
-                  {!isReadOnly && (
-                    <div>
-                      <label className="flex items-center gap-2 text-sm font-medium text-slate-400 mb-2">
-                        <Shield className="h-4 w-4" /> Encrypted secrets
-                        {hasStoredSecrets && <span className="text-emerald-400 text-xs">stored</span>}
-                      </label>
-                      <textarea
-                        value={secretsJson}
-                        onChange={(event) => {
-                          setSecretsJson(event.target.value);
-                          setSecretsChanged(true);
-                        }}
-                        className={cn(
-                          "w-full h-32 p-3 rounded-lg bg-slate-900/70 border font-mono text-sm text-slate-200",
-                          jsonError ? "border-red-500/50" : "border-slate-700/50"
-                        )}
-                        placeholder={'{"token":"..."} or {"client_secret":"..."}'}
-                      />
-                      <p className="mt-2 text-xs text-slate-500">
-                        Values are encrypted with AES-GCM and are never returned by the API. Enter only values that should replace the stored secret set. Anything defined here overrides a vault secret of the same name; names not defined here fall back to the Secrets vault.
+                        Auth secrets resolve by name from the playbook&apos;s Secrets vault. Store the value once on the Secrets tab and reference its name here.
                       </p>
                     </div>
                   )}

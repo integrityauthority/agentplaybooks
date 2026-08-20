@@ -37,10 +37,6 @@ vi.mock("@/lib/mcp/federation", () => ({
   readFederatedResource: vi.fn(),
 }));
 
-vi.mock("@/lib/mcp/secrets", () => ({
-  decryptMcpSecrets: vi.fn().mockResolvedValue({}),
-}));
-
 const publicPlaybook = {
   id: "playbook-1",
   guid: "public-guid",

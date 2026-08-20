@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { encryptSecret } from "@/lib/crypto";
-import { encryptMcpSecrets } from "@/lib/mcp/secrets";
 
 const { getServiceSupabaseMock } = vi.hoisted(() => ({
   getServiceSupabaseMock: vi.fn(),
@@ -40,8 +39,7 @@ type VaultRow = {
  * rows are stored encrypted with the real crypto, so the test proves actual
  * decryption, not just plumbing.
  */
-async function stubDatabase({ blob, vault }: { blob: Record<string, unknown> | null; vault: VaultRow[] }) {
-  const encryptedBlob = blob ? await encryptMcpSecrets(blob, SERVER_ID) : null;
+async function stubDatabase({ vault }: { vault: VaultRow[] }) {
   const vaultRows = await Promise.all(vault.map(async (row) => {
     const encrypted = await encryptSecret(row.value, USER_ID, { playbookId: PLAYBOOK_ID, secretName: row.name });
     return {
@@ -57,19 +55,6 @@ async function stubDatabase({ blob, vault }: { blob: Record<string, unknown> | n
 
   getServiceSupabaseMock.mockReturnValue({
     from(table: string) {
-      if (table === "mcp_server_secrets") {
-        return {
-          select: () => ({
-            eq: () => ({
-              maybeSingle: async () => ({
-                data: encryptedBlob
-                  ? { encrypted_payload: encryptedBlob.encryptedPayload, iv: encryptedBlob.iv }
-                  : null,
-              }),
-            }),
-          }),
-        };
-      }
       if (table === "playbooks") {
         return {
           select: () => ({
@@ -103,13 +88,11 @@ async function stubDatabase({ blob, vault }: { blob: Record<string, unknown> | n
 
 beforeEach(() => {
   process.env.SECRETS_ENCRYPTION_KEY = "0123456789abcdef".repeat(4);
-  process.env.MCP_SECRET_ENCRYPTION_KEY = "fedcba9876543210".repeat(4);
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
   delete process.env.SECRETS_ENCRYPTION_KEY;
-  delete process.env.MCP_SECRET_ENCRYPTION_KEY;
 });
 
 describe("referencedSecretNames", () => {
@@ -127,9 +110,8 @@ describe("referencedSecretNames", () => {
 });
 
 describe("loadFederationSecrets", () => {
-  it("falls back to the vault for a referenced name the server payload lacks", async () => {
+  it("resolves a referenced name from the vault", async () => {
     await stubDatabase({
-      blob: null,
       vault: [{ id: "s1", name: "SEARCH_TOKEN", value: "vault-token-value" }],
     });
     const secrets = await loadFederationSecrets(
@@ -139,21 +121,8 @@ describe("loadFederationSecrets", () => {
     expect(secrets.SEARCH_TOKEN).toBe("vault-token-value");
   });
 
-  it("keeps the server's own payload authoritative over the vault", async () => {
-    await stubDatabase({
-      blob: { SEARCH_TOKEN: "server-scoped-value" },
-      vault: [{ id: "s1", name: "SEARCH_TOKEN", value: "vault-token-value" }],
-    });
-    const secrets = await loadFederationSecrets(
-      server({ url: "https://mcp.example.com/http", auth: { type: "bearer", token_secret: "SEARCH_TOKEN" } }),
-      PLAYBOOK_ID,
-    );
-    expect(secrets.SEARCH_TOKEN).toBe("server-scoped-value");
-  });
-
   it("only decrypts vault names the config references", async () => {
     await stubDatabase({
-      blob: null,
       vault: [
         { id: "s1", name: "SEARCH_TOKEN", value: "vault-token-value" },
         { id: "s2", name: "UNRELATED_KEY", value: "must-not-appear" },
@@ -169,7 +138,6 @@ describe("loadFederationSecrets", () => {
 
   it("honours an explicitly-set allowed_hosts list against the server's destinations", async () => {
     await stubDatabase({
-      blob: null,
       vault: [{ id: "s1", name: "SEARCH_TOKEN", value: "pinned-value", allowed_hosts: ["api.other.com"] }],
     });
     const secrets = await loadFederationSecrets(
@@ -182,7 +150,6 @@ describe("loadFederationSecrets", () => {
 
   it("records vault use without failing the call if the update does", async () => {
     const { updates } = await stubDatabase({
-      blob: null,
       vault: [{ id: "s1", name: "SEARCH_TOKEN", value: "vault-token-value" }],
     });
     await loadFederationSecrets(
@@ -193,11 +160,13 @@ describe("loadFederationSecrets", () => {
   });
 
   it("makes no vault queries at all when the config references nothing", async () => {
-    await stubDatabase({ blob: { headers: { "X-Extra": "1" } }, vault: [] });
+    // The stub throws on any unexpected table, so reaching the database here
+    // would fail rather than pass quietly.
+    await stubDatabase({ vault: [] });
     const secrets = await loadFederationSecrets(
       server({ url: "https://mcp.example.com/http" }),
       PLAYBOOK_ID,
     );
-    expect(secrets).toEqual({ headers: { "X-Extra": "1" } });
+    expect(secrets).toEqual({});
   });
 });

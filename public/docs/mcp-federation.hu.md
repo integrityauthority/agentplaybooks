@@ -78,7 +78,7 @@ A `tools/list` a beépített playbookműveleteket és a federált eszközöket l
 
 ## Telepítés és biztonság
 
-Állíts be legalább 32 karakteres, véletlen `MCP_SECRET_ENCRYPTION_KEY` értéket – legjobb egy 64 karakteres hexadecimális sztring, mert az érték nyers kulcsanyagként kerül felhasználásra, nem hasheljük –, és futtasd a `supabase/migrations/20260730_federated_mcp_proxy.sql` migrációt. A secret plaintext csak íráskor érkezik be, AES-256-GCM-mel titkosítva tárolódik, és az API soha nem adja vissza.
+A hitelesítő adatot a playbook **Secrets** fülén tárold, majd névvel hivatkozz rá a szerver transport configjából (`auth.token_secret`, `auth.api_key_secret`, `auth.client_secret`). Nincs külön MCP-titok tároló és nincs külön titkosítási kulcs: a széf tartja, AES-256-GCM-mel, tulajdonosonként származtatott kulccsal, és a plaintextet soha nem adja vissza. A titkon beállított `allowed_hosts` lista minden célhelyre érvényesül, amit a szerver configja elérhet.
 
 Az egyes szerverek hitelesítő adatait ebből az értékből HKDF-fel származtatott kulccsal titkosítjuk, amelyet a szerver azonosítója sóz meg, és az azonosító a titkosított adat hitelesített része. Így az egyik szerver kulcsanyagával nem lehet egy másik szerver adatát visszafejteni, egy másik szerver sorába átmásolt titkosított érték pedig egyáltalán nem fejthető vissza. A változás előtt írt sorok (nincs `v2:` prefixük) továbbra is olvashatók, és automatikusan frissülnek, amikor az adott szerver secretjeit legközelebb mented.
 

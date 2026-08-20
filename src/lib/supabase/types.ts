@@ -110,14 +110,6 @@ export type MCPServersRow = {
   created_at: string;
 };
 
-export type MCPServerSecretRow = {
-  mcp_server_id: string;
-  encrypted_payload: string;
-  iv: string;
-  created_at: string;
-  updated_at: string;
-};
-
 /**
  * One playbook audit event — a federated MCP call or a secrets vault operation.
  *
@@ -473,12 +465,6 @@ export interface Database {
         Row: MCPServersRow;
         Insert: MCPServersInsert;
         Update: MCPServersUpdate;
-        Relationships: [];
-      };
-      mcp_server_secrets: {
-        Row: MCPServerSecretRow;
-        Insert: Omit<MCPServerSecretRow, "created_at" | "updated_at"> & { created_at?: string; updated_at?: string };
-        Update: Partial<Omit<MCPServerSecretRow, "mcp_server_id" | "created_at">>;
         Relationships: [];
       };
       audit_logs: {
