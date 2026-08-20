@@ -45,9 +45,21 @@ export async function checkPlaybookWriteAccess(userId: string, playbookId: strin
   return (await getPlaybookAccessRole(userId, playbookId)) !== null;
 }
 
+/**
+ * Resolve a playbook by GUID for a caller that may be a session user, a
+ * playbook-scoped API key, or neither.
+ *
+ * A playbook API key is bound to exactly one playbook, so presenting a valid
+ * one *is* the proof of access — such a caller has no session to check against
+ * `playbook_collaborators`. Before `apiKeyPlaybookId` existed, a private
+ * playbook answered 404 to every API-key caller, because the visibility gate
+ * ran before the key was ever considered. That made the agent-facing half of
+ * the secrets vault unreachable unless the playbook was public or unlisted.
+ */
 export async function getPlaybookByGuid(
   guid: string,
-  userId: string | null
+  userId: string | null,
+  apiKeyPlaybookId: string | null = null
 ): Promise<Pick<Playbook, "id" | "user_id" | "visibility" | "guid"> | null> {
   const { data: playbook, error } = await getServiceSupabase()
     .from("playbooks")
@@ -62,8 +74,12 @@ export async function getPlaybookByGuid(
 
   const isPublicOrUnlisted = playbook.visibility === 'public' || playbook.visibility === 'unlisted';
   if (!isPublicOrUnlisted) {
-    if (!userId || !(await checkPlaybookWriteAccess(userId, playbook.id))) {
-      return null;
+    const keyIsForThisPlaybook = apiKeyPlaybookId !== null
+      && apiKeyPlaybookId === playbook.id;
+    if (!keyIsForThisPlaybook) {
+      if (!userId || !(await checkPlaybookWriteAccess(userId, playbook.id))) {
+        return null;
+      }
     }
   }
 

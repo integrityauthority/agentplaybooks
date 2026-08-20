@@ -146,6 +146,7 @@ npm run dev
 ### Database Setup
 
 1. Create a Supabase project at [supabase.com](https://supabase.com)
+
 2. Apply `supabase/schema.sql` in the SQL Editor — that is the whole schema in
    one file: types, tables, constraints, indexes, functions, triggers, RLS and
    policies
@@ -164,6 +165,41 @@ following the old step against an empty project failed on the first statement.
 
 > The schema references `auth.users` and its policies call `auth.uid()`, so it
 > needs the Supabase stack. A bare PostgreSQL server will reject it.
+
+### Inspecting the database from an AI editor (optional)
+
+Maintainers can attach the read-only Supabase MCP server, which is how the
+schema gets inspected without pasting credentials around. Create a `.mcp.json`
+in the repo root — it is gitignored, so it stays local:
+
+```json
+{
+  "mcpServers": {
+    "supabase": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@supabase/mcp-server-supabase@0.10.0",
+        "--read-only",
+        "--project-ref=${SUPABASE_PROJECT_REF}"
+      ],
+      "env": { "SUPABASE_ACCESS_TOKEN": "${SUPABASE_ACCESS_TOKEN}" }
+    }
+  }
+}
+```
+
+Then set two variables in your shell — never in a committed file:
+
+- `SUPABASE_PROJECT_REF` — the subdomain of your project URL
+  (`https://<ref>.supabase.co`)
+- `SUPABASE_ACCESS_TOKEN` — a personal access token from
+  [supabase.com/dashboard/account/tokens](https://supabase.com/dashboard/account/tokens)
+
+`--read-only` is deliberate: the token grants account-wide access, so the
+server should not be able to write. Drop the flag only when you actually intend
+to apply a migration through it, and put it back afterwards.
+
 
 ## Key Concepts
 

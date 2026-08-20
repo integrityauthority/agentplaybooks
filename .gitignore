@@ -55,3 +55,6 @@ yarn-error.log*
 # auto-generated
 src/lib/blog-slugs.generated.ts
 
+
+# Local MCP server config (holds a project ref and reads a PAT from the env)
+.mcp.json

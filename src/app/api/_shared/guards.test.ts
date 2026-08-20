@@ -105,6 +105,62 @@ describe("playbook access guards", () => {
     await expect(getPlaybookByGuid("private-guid", "viewer-1")).resolves.toBeNull();
   });
 
+  it("lets a playbook API key reach its own private playbook", async () => {
+    // A playbook-scoped key has no session, so the visibility gate used to
+    // reject it and every secrets endpoint answered 404 on a private playbook.
+    const supabase = mockSupabaseResults({
+      data: {
+        id: "playbook-1",
+        user_id: "owner-1",
+        visibility: "private",
+        guid: "private-guid",
+      },
+      error: null,
+    });
+
+    await expect(getPlaybookByGuid("private-guid", null, "playbook-1"))
+      .resolves.toMatchObject({ id: "playbook-1", visibility: "private" });
+    // The key is its own proof of access — no membership lookup is needed.
+    expect(supabase.maybeSingle).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects a key issued for a different playbook", async () => {
+    mockSupabaseResults(
+      {
+        data: {
+          id: "playbook-1",
+          user_id: "owner-1",
+          visibility: "private",
+          guid: "private-guid",
+        },
+        error: null,
+      },
+      { data: null, error: null },
+      { data: null, error: null },
+    );
+
+    await expect(getPlaybookByGuid("private-guid", null, "other-playbook"))
+      .resolves.toBeNull();
+  });
+
+  it("still hides a private playbook when no key is presented", async () => {
+    mockSupabaseResults(
+      {
+        data: {
+          id: "playbook-1",
+          user_id: "owner-1",
+          visibility: "private",
+          guid: "private-guid",
+        },
+        error: null,
+      },
+      { data: null, error: null },
+      { data: null, error: null },
+    );
+
+    await expect(getPlaybookByGuid("private-guid", null)).resolves.toBeNull();
+  });
+
   it("fails closed when the collaboration lookup fails", async () => {
     mockSupabaseResults(
       { data: null, error: null },
