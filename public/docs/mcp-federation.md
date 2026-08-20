@@ -92,4 +92,4 @@ Each server's credentials are encrypted with a key derived from that value via H
 
 `access: "public"` allows anyone who can access the public playbook to incur upstream calls. Omitted access and `playbook_api_key` both require a playbook key with `tools:call` or `full` permission.
 
-Owners can inspect metadata-only call history at `GET /api/mcp/audit/PLAYBOOK_GUID?limit=100` using their session or a user API key with `playbooks:read`.
+Owners can inspect metadata-only call history at `GET /api/playbooks/PLAYBOOK_GUID/audit?limit=100` (the earlier `GET /api/mcp/audit/PLAYBOOK_GUID` still answers the same) using their session or a user API key with `playbooks:read`.

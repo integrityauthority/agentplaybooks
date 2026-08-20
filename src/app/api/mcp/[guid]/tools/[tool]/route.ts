@@ -2,11 +2,8 @@ import { handle } from "hono/vercel";
 import { createApiApp } from "@/app/api/_shared/hono";
 import { validateApiKey } from "@/app/api/_shared/auth";
 import { getServiceSupabase, getSupabase } from "@/app/api/_shared/supabase";
-import {
-  callFederatedTool,
-  federatedServerPrefix,
-  type FederationAuditEvent,
-} from "@/lib/mcp/federation";
+import { callFederatedTool, federatedServerPrefix } from "@/lib/mcp/federation";
+import { federationAuditWriter } from "@/app/api/_shared/audit";
 import { decryptMcpSecrets } from "@/lib/mcp/secrets";
 import type { ApiKey, MCPServer } from "@/lib/supabase/types";
 
@@ -52,18 +49,7 @@ app.post("/", async (c) => {
     .maybeSingle();
   const secrets = secretRow ? await decryptMcpSecrets(secretRow.encrypted_payload, secretRow.iv, server.id) : {};
   const requestId = c.req.header("cf-ray") || c.req.header("x-request-id") || crypto.randomUUID();
-  const audit = async (event: FederationAuditEvent) => {
-    await service.from("mcp_proxy_audit_logs").insert({
-      playbook_id: playbook.id,
-      mcp_server_id: event.serverId,
-      operation: event.operation,
-      target: event.target || null,
-      status: event.status,
-      latency_ms: event.latencyMs,
-      error_code: event.errorCode || null,
-      request_id: requestId,
-    });
-  };
+  const audit = federationAuditWriter(playbook.id, requestId);
   try {
     const args = await c.req.json<Record<string, unknown>>().catch(() => ({}));
     const result = await callFederatedTool(server, toolName, args, { secrets, audit });

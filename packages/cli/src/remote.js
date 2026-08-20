@@ -1,7 +1,7 @@
 import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { runDoctor } from "./doctor.js";
+import { runDoctor, runGlobalDoctor } from "./doctor.js";
 import { normalizeText } from "./discovery.js";
 import { createManifest, comparableManifest } from "./manifest.js";
 import { canonicalJson } from "./adapters.js";
@@ -190,6 +190,14 @@ const INSTRUCTION_PRECEDENCE = [
 ];
 const PORTABLE_INSTRUCTIONS_PATH = "AGENTS.md";
 
+// The persona is who the agent is, so it belongs to no single instruction file:
+// `sync` hands it to the targets that have a place for an identity (Hermes reads
+// it as SOUL.md). `push` never sends it back — the hosted playbook owns it.
+const PORTABLE_PERSONA_PATH = ".agents/persona.md";
+// What the API answers with for a playbook that has never set a persona. Writing
+// it out would put a stock sentence in front of every agent's identity.
+const DEFAULT_PERSONA_PROMPT = "You are a helpful AI assistant.";
+
 function localMcpDefinition(server) {
   const config = server.transport_config ?? {};
   if (server.transport_type === "stdio") {
@@ -287,6 +295,19 @@ export async function planPull(root, ref, { url, apiKey, fetchImpl } = {}) {
       actions.push({ kind: "instructions", name: PORTABLE_INSTRUCTIONS_PATH, action: "create", path: PORTABLE_INSTRUCTIONS_PATH, content });
     } else if (existing !== content) {
       conflicts.push({ kind: "instructions", name: PORTABLE_INSTRUCTIONS_PATH, reason: `Local ${PORTABLE_INSTRUCTIONS_PATH} differs from the playbook's instructions.` });
+    }
+  }
+
+  const personaPrompt = typeof playbook.persona?.system_prompt === "string"
+    ? normalizeText(playbook.persona.system_prompt).trim()
+    : "";
+  if (personaPrompt.length > 0 && personaPrompt !== DEFAULT_PERSONA_PROMPT) {
+    const content = `${personaPrompt}\n`;
+    const existing = await readLocalFile(root, PORTABLE_PERSONA_PATH);
+    if (existing === null) {
+      actions.push({ kind: "persona", name: PORTABLE_PERSONA_PATH, action: "create", path: PORTABLE_PERSONA_PATH, content });
+    } else if (existing !== content) {
+      conflicts.push({ kind: "persona", name: PORTABLE_PERSONA_PATH, reason: `Local ${PORTABLE_PERSONA_PATH} differs from the playbook's persona.` });
     }
   }
 
@@ -458,11 +479,33 @@ function remoteMatchesLocal(remoteServer, localServer) {
  * Plan pushing the local playbook to the remote. Refuses to plan when doctor
  * finds likely hard-coded credentials in the content that would be uploaded.
  */
-export async function planPush(root, { url, apiKey, fetchImpl } = {}) {
-  const report = await runDoctor(root);
+export async function planPush(root, options = {}) {
+  return planPushFrom(await runDoctor(root), root, options);
+}
+
+/**
+ * Push what this machine has, rather than what one project has: the skills in
+ * `~/.cursor/skills`, `~/.claude/skills`, and the Hermes profile become one
+ * hosted playbook, which is what provisioning the next machine reads.
+ *
+ * MCP servers stay out, for the same reason global sync leaves them alone: a
+ * home-scoped MCP config is where an auth header lives, and a playbook is a
+ * thing you share. Skills travel; connection secrets do not.
+ */
+export async function planGlobalPush(options = {}) {
+  const homedir = options.homedir ?? os.homedir();
+  const report = await runGlobalDoctor(options);
+  return planPushFrom(report, homedir, {
+    ...options,
+    scope: "global",
+    displayName: `${os.hostname()} workstation`,
+  });
+}
+
+async function planPushFrom(report, root, { url, apiKey, fetchImpl, scope = "project", displayName } = {}) {
   const conflicts = [];
   const skills = localSkillsForPush(report, conflicts);
-  const mcpServers = localMcpServersForPush(report, conflicts);
+  const mcpServers = scope === "global" ? [] : localMcpServersForPush(report, conflicts);
   const instructions = localInstructionsForPush(report, conflicts);
 
   const uploadedSources = new Set([
@@ -477,7 +520,7 @@ export async function planPush(root, { url, apiKey, fetchImpl } = {}) {
     throw new Error(`Refusing to push: possible hard-coded credentials in ${sources}. Move secrets to environment references first.`);
   }
 
-  const manifest = comparableManifest(createManifest(report));
+  const manifest = comparableManifest(createManifest(report, { displayName }));
   const link = await readLink(root);
   let remote = null;
   if (link?.playbookId && link.url === url) {
@@ -540,6 +583,8 @@ export async function planPush(root, { url, apiKey, fetchImpl } = {}) {
     remote: remote ? { id: remote.id, guid: remote.guid, name: remote.name } : null,
     actions,
     conflicts,
+    scope,
+    root,
   };
 }
 

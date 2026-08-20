@@ -1,67 +1,137 @@
 ---
-title: A Nous Hermes használata az AgentPlaybooks-al
-description: Tanuld meg, hogyan kötheted össze az erős nyílt forráskódú Nous Hermes ügynök modellt a Playbookjaiddal MCP és OpenAPI segítségével.
+title: A Hermes Agent használata az AgentPlaybooks-kal
+description: A Hermes Agent a Nous Research MIT-licencű, saját gépen futó személyi ügynöke. Így lesz egy playbookból a skilljei, az MCP-szerverei és az identitása — és így szabályozod, mihez nyúl először.
 date: 2026-06-15
 author: Mate Benyovszky
 ---
 
-# A Nous Hermes használata az AgentPlaybooks-al
+# A Hermes Agent használata az AgentPlaybooks-kal
 
-A nyílt forráskódú modellek hihetetlen fejlődésen mentek keresztül az eszközhasználat (tool-calling) és a logikai következtetés terén. A **Nous Hermes** (például a Hermes 3) kifejezetten fejlett ügynök (agentic) munkafolyamatokra és funkcióhívásokra lett finomhangolva, ami tökéletes társsá teszi az AgentPlaybooks számára.
+A **Hermes Agent** a Nous Research nyílt forráskódú (MIT) személyi ügynöke.
+Ugyanaz az agent-core fut egy CLI, egy TUI, egy Electron desktop alkalmazás és
+egy messaging gateway mögött (Telegram, Discord, Slack és még körülbelül húsz
+platform). Minden, amit tud, egyetlen profilkönyvtárban él — `~/.hermes`, vagy
+`$HERMES_HOME`, ha több profilt futtatsz —, és semmi nem hagyja el a gépet a
+modellhívásokon kívül, amiket te állítasz be.
 
-Ebben az útmutatóban bemutatjuk, hogyan használhatod a Hermes ügynök modellt a Playbookoddal, hogy tartós memóriát, személyiséget (Persona) és biztonságos MCP eszközökhöz való hozzáférést biztosíts neki.
+> **Két különböző dolgot hívnak Hermesnek.** Ez a bejegyzés a *Hermes Agentről*
+> szól, arról a kliensről, amit telepítesz. A *Hermes* modellek (Hermes 3,
+> Hermes 4) a Nous Research külön kiadása; bármelyiket futtathatod modellként
+> egy MCP-képes kliens alatt, akár ez alatt is, de az modellválasztás — nem az
+> teszi a playbookot portolhatóvá.
 
-## 🤖 Miért pont a Hermes?
+Ez a profilfelépítés pontosan az, amit az AgentPlaybooks szinkronizál:
 
-A Hermes modellcsalád a következő területeken jeleskedik:
-- **Komplex rendszer-promptok követése**: Tökéletesen átveszi a Playbookod személyiségét (Persona).
-- **Funkcióhívás**: Natívan megérti a JSON sémákat, és megbízhatóan képes aktiválni a Playbookod Képességeit (Skills) és MCP szervereit.
-- **Autonómia**: Képes többlépéses terveket végrehajtani anélkül, hogy hallucinálna az eszközök bemeneteinél.
+| Amit a playbook tartalmaz | Ahol a Hermes Agent olvassa |
+|---|---|
+| Persona | `~/.hermes/SOUL.md` — a rendszerprompt #1 slotja |
+| Projekt-utasítások | `AGENTS.md` a projektben (natívan olvassa) |
+| Agent Skillek | `~/.hermes/skills/`, plusz minden könyvtár a `skills.external_dirs`-ből |
+| MCP-szerverek | `mcp_servers:` a `~/.hermes/config.yaml`-ban |
 
-A Hermes és az AgentPlaybooks kombinálásával kitörheted a modellt az izolált, állapotmentes chat dobozából, és egy valódi operációs környezetet biztosíthatsz neki.
+## Playbook szinkronizálása egy Hermes profilba
 
-## 🔌 Csatlakozási Módok
-
-Mivel a Hermest gyakran lokálisan futtatják (Ollama vagy LM Studio segítségével), vagy felhőszolgáltatókon keresztül érik el (mint az OpenRouter), két fő módon tudod összekötni az AgentPlaybooks-al.
-
-### 1. Módszer: Model Context Protocol (MCP)
-
-Ha egy MCP-kompatibilis klienst használsz a Hermes futtatására, a Playbookodat közvetlenül MCP szerverként kötheted be.
-
-1. Hozz létre egy **Playbook API Kulcsot** az AgentPlaybooks vezérlőpultján.
-2. A lokális MCP kliensed konfigurációjában add hozzá a Playbookod végpontját:
-   ```json
-   "mcpServers": {
-     "my-playbook": {
-       "command": "npx",
-       "args": ["-y", "@agentplaybooks/mcp-client", "https://apbks.com/api/mcp/A_TE_PLAYBOOK_GUID_AZONOSITOD"],
-       "env": {
-         "PLAYBOOK_API_KEY": "apb_live_xxxxxxxxxxx"
-       }
-     }
-   }
-   ```
-3. Indítsd el a klienst a Hermes modellel. A Hermes azonnal beolvassa a biztosított erőforrásokat (`resources`, azaz a Playbookod Vászna és Memóriája) és megérti az elérhető eszközöket (`tools`, azaz a Képességeid és külső integrációid).
-
-### 2. Módszer: OpenAPI Funkcióhívás
-
-Ha egyedi Python vagy Node.js szkriptet írsz a Hermes irányítására (pl. `llama-cpp-python` vagy az OpenAI-kompatibilis OpenRouter API használatával), dinamikusan lekérheted a Playbookod OpenAPI specifikációját.
+Húzd le a playbookot, majd add át a Hermesnek:
 
 ```bash
-curl "https://apbks.com/api/playbooks/A_TE_PLAYBOOK_GUID_AZONOSITOD?format=openapi"
+apb pull <playbook-guid> --apply
+apb sync --target=hermes --apply
 ```
 
-1. Parseold ezt az OpenAPI JSON-t szabványos OpenAI funkciódefiníciókká.
-2. Add át ezeket a funkciókat a Hermes modellnek a `tools` tömbben a chat kérésednél.
-3. Szerepeltesd a Playbookod Személyiségét (Persona) `system` üzenetként.
-4. Amikor a Hermes úgy dönt, hogy meghív egy eszközt, a te szkripted hajtja végre a HTTP kérést az AgentPlaybooks API felé az API Kulcsod használatával.
+A terv pontosan megmutatja, mi fog történni, mielőtt bármi íródna. Három dolgot
+érdemes tudni a hermes targetről:
 
-## 🛡️ Biztonságos Végrehajtás
+**A skillek regisztrálva lesznek, nem másolva.** Ahelyett, hogy minden skillt
+beduplikálnánk a `~/.hermes/skills/`-be, a sync felveszi a projekt portable
+tárát a `config.yaml` `skills.external_dirs` listájába. A Hermes ezután ott
+olvassa a skilleket, ahol vannak. Semmi nem duplikálódik, tehát semmi nem tud
+elcsúszni; a következő `apb pull` azonnal él, második sync nélkül.
 
-Függetlenül attól, hogy MCP-t vagy OpenAPI-t használsz, a Hermes örökli az AgentPlaybooks összes biztonsági funkcióját. Ha a Hermesnek egy külső API-val kell interakcióba lépnie (mint a GitHub vagy egy adatbázis), használhatja a **Secrets Vault**-ot (Titkok Tárháza).
+**Az MCP-szerverek beolvadnak a `config.yaml`-ba.** A dokumentumot szerkesztjük,
+nem újragenerálljuk, így a kommentjeid, a kulcssorrend és minden nem érintett
+beállítás megmarad. Ha egy szerver már létezik más definícióval, azt
+konfliktusként jelentjük és nem bántjuk — a sync soha nem ír felül kézzel
+beállított kapcsolatot.
 
-A Hermes sosem fogja látni a nyers API kulcsaidat. Helyette a `use_secret` eszközt fogja használni, hogy megkérje a Playbookot a kérés végrehajtására a nevében, ezzel biztosítva a nulla kitettségű hitelesítőadat-kezelést.
+**A personából `SOUL.md` lesz.** A Hermes az első indításkor legenerál egy alap
+`SOUL.md`-t, és a sync azt nem írja felül. Ha a playbook personáját akarod az
+ügynök identitásának, töröld a legenerált fájlt (vagy fűzd össze a kettőt
+kézzel), és futtasd újra a syncet. Ez az ügynököd identitása — azt nem egy
+eszköznek kell eldöntenie.
 
-## Következő Lépések
+## Mihez nyúl a Hermes először
 
-Kombináld a Hermest a [Platform Integrációinkkal](/docs/platform-integrations), hogy lásd, hogyan építhetsz egy valóban autonóm, nyílt forráskódú ügynök munkafolyamatot még ma!
+A Hermesben nincs numerikus skill-prioritás. A sorrend négy mechanizmusból áll
+össze, és együtt pont azt adják, amit általában akarsz — előbb az ügynök saját
+skilljei, közvetlenül utánuk a szervezet playbookja:
+
+1. **Precedencia névütközésnél.** A `~/.hermes/skills/` nyer minden ellen, ami az
+   `external_dirs`-ben van. Mivel a playbook külső könyvtárként van regisztrálva,
+   a Hermes beépített és önmaga által írt skilljei elöl maradnak, a playbook
+   pedig a következő, amit lát.
+2. **Az utasításfájlok.** A `SOUL.md` és az `AGENTS.md` az a hely, ahol kimondod,
+   melyik forrás az irányadó — például hogy a playbook skilljei a szervezet
+   szabályai, és nyernek a modell saját szokásaival szemben. Ez prompt-fegyelem,
+   és a gyakorlatban ez dönt.
+3. **Bundle-ök.** Egy Hermes bundle több skillt fog össze egyetlen slash-parancs
+   alá, és slug-ütközésnél megelőzi az egyedi skilleket.
+4. **`hermes skills config`.** Platformonkénti be- és kikapcsolás, hogy ki tudd
+   lőni azt a zajt, amit egy marketplace-ről telepítettél és soha nem használtál.
+
+Egy Hermes-specifikus csapda, amit a CLI most már jelez neked: a Hermes pontosan
+**egy** projekt-kontextusfájlt tölt be, az első találat nyer, ebben a sorrendben:
+`.hermes.md` → `AGENTS.md` → `CLAUDE.md` → `.cursorrules`. Egy projekt, amiben
+`.hermes.md` és `AGENTS.md` is van, olyan utasításokat szállít, amiket a Hermes
+soha nem fog elolvasni. Az `apb sync --target=hermes` ezt konfliktusként jelzi,
+nem pedig hagyja, hogy később derüljön ki.
+
+## Skillek telepítése közvetlenül egy playbookból
+
+A Hermes bármelyik oldalról telepít skillt, amelyik a well-known útvonalon
+publikálja őket — regisztráció és registry nélkül. Minden publikus playbook
+ilyen:
+
+```bash
+hermes skills search https://agentplaybooks.ai/playbooks/<guid> --source well-known
+hermes skills install well-known:https://agentplaybooks.ai/playbooks/<guid>/.well-known/skills/<név>
+```
+
+Van egy oldalszintű index is:
+`https://agentplaybooks.ai/.well-known/skills/index.json`. Mindkettő valódi
+`SKILL.md` dokumentumokat szolgál ki — ugyanazt az Agent Skills formátumot
+([agentskills.io](https://agentskills.io/specification)), amit minden más kliens
+olvas, és a specifikáción kívüli, Hermes által értett mezőket (`version`,
+`platforms`, `metadata.hermes.*`) pontosan úgy megtartja, ahogy a szerző megírta.
+
+Csak publikus playbookok jelennek meg így. Egy privát vagy unlisted playbook az
+`apb pull` mögött marad — ez így szándékos, nem korlátozás.
+
+## A playbook mint MCP-szerver
+
+A másik irány ugyanennyire hasznos: a playbook maga is MCP-szerver, így a Hermes
+eszközként hívhatja, nem csak fájlokat olvashat belőle. Vedd fel a
+`~/.hermes/config.yaml`-ba:
+
+```yaml
+mcp_servers:
+  my-playbook:
+    url: "https://apbks.com/api/mcp/A_PLAYBOOK_GUID"
+    headers:
+      Authorization: "Bearer ${PLAYBOOK_API_KEY}"
+```
+
+Magát a kulcsot a `~/.hermes/.env`-ben tartsd, ne a `config.yaml`-ban. A Hermes a
+`${VAR}` hivatkozásokat először a környezetből, majd abból a fájlból oldja fel,
+így a config, amit commitolsz vagy megosztasz, soha nem tartalmaz hitelesítő
+adatot.
+
+MCP-n keresztül a Hermes megkapja a playbook memóriáját és vászonját
+erőforrásként, a skilljeit és integrációit pedig eszközként. Ha egy eszközhöz
+külső hitelesítő adat kell, a playbook Secrets Vaultja hajtja végre a hívást az
+ügynök nevében: a nyers érték nem jut el a modellhez, és nem kerül a gépre.
+
+## Következő lépések
+
+- [CLI referencia](/docs/cli) — minden target, és hogy mit ír a sync mindegyikhez
+- [Platform integrációk](/docs/platform-integrations) — ugyanaz a playbook más kliensekben
+- [Hermes Agent dokumentáció](https://hermes-agent.nousresearch.com/docs) — profilok, pluginok, terminal backendek

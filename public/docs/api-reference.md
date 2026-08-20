@@ -844,6 +844,55 @@ Authorization: Bearer <jwt>
 
 Owner only. Permanently deletes the secret.
 
+### Audit Trail
+
+Vault operations are recorded in the same `audit_logs` trail as federated MCP calls, namespaced
+`secret.*` in `operation`, and read at the shared endpoint:
+
+```http
+GET /api/playbooks/:guid/audit?operation=secret.
+GET /api/playbooks/:guid/audit?operation=secret.use,secret.reveal&secret=OPENAI_API_KEY&limit=200
+Authorization: Bearer <jwt_or_user_api_key>
+```
+
+Every operation — `secret.create`, `secret.rotate`, `secret.update`, `secret.delete`,
+`secret.reveal`, `secret.use`, `secret.list` — is recorded, including the ones that were refused.
+Each entry carries the outcome (`success`, `denied`, `error`), who acted (the owner's user id, or
+an API key's prefix), the destination **host** in `target` for `secret.use`, and a short
+`error_code` such as `not_authorized`, `destination_not_allowed` or
+`reveal_not_permitted_for_api_key`.
+
+Entries never contain a secret value, a full outbound URL (a path or query string carries data
+of its own), or an API key.
+
+Owner access only: a session, or a **user** API key with `playbooks:read`. A playbook API key —
+the credential agents use to perform vault operations — cannot read the record of them.
+
+```json
+{
+  "logs": [
+    {
+      "id": "…",
+      "mcp_server_id": null,
+      "operation": "secret.use",
+      "target": "attacker.example.com",
+      "status": "denied",
+      "error_code": "destination_not_allowed",
+      "actor_type": "api_key",
+      "actor_id": "apb_live_a1b2",
+      "secret_name": "OPENAI_API_KEY",
+      "request_id": "…",
+      "created_at": "2026-08-19T09:12:44.000Z"
+    }
+  ]
+}
+```
+
+`limit` defaults to 100 and is capped at 500. `operation` takes a comma-separated list of exact
+names, or a single trailing-dot prefix (`secret.`) to mean every vault event; `secret` filters by
+name, which keeps working after the secret itself is deleted. The same endpoint answers at the
+original `GET /api/mcp/audit/:guid`.
+
 ### Secret Categories
 
 | Category | Description |
@@ -1098,6 +1147,65 @@ GET /api/public/mcp?tags=database,automation
 
 ```http
 GET /api/public/mcp/:id
+```
+
+---
+
+## Agent Skills Discovery (`.well-known/skills`)
+
+The [`.well-known/skills`](https://agentskills.io/specification) convention lets
+any agent client install skills straight from a website — no registry, no
+sign-up, no credential. Point a client at a base URL and it reads the index.
+
+```http
+GET /.well-known/skills/index.json
+GET /.well-known/skills/:name/SKILL.md
+GET /.well-known/skills/:name/:file
+```
+
+The same three routes exist per playbook, which is the form to hand a team: it
+publishes exactly that playbook's skills, with no chance of another publisher's
+name shadowing one of theirs.
+
+```http
+GET /playbooks/:guid/.well-known/skills/index.json
+GET /playbooks/:guid/.well-known/skills/:name/SKILL.md
+```
+
+**Index response:**
+
+```json
+{
+  "skills": [
+    {
+      "name": "code-review",
+      "description": "Review a diff for bugs. Use when a pull request needs review.",
+      "files": ["SKILL.md", "references/CHECKLIST.md"]
+    }
+  ]
+}
+```
+
+`SKILL.md` is served as `text/markdown` and is the complete document, including
+frontmatter fields outside the Agent Skills spec (`version`, `platforms`,
+`metadata.<client>.*`) exactly as the author wrote them. `files` lists what the
+skill bundles; each is fetched from `:name/:file` and is restricted to the spec's
+directories (`scripts/`, `references/`, `assets/`, `examples/`, `templates/`).
+
+Notes:
+
+- **Public playbooks only.** These routes are unauthenticated, so a private or
+  unlisted playbook is never published through them — use the CLI's `pull` for
+  those.
+- **Names are unique.** A skill name is a directory name, so the site-wide index
+  serves one skill per name (the most recent) rather than the same name twice.
+- Responses are cacheable (`max-age=300`) and CORS-enabled (`GET`, `OPTIONS`).
+
+**Example — installing into Hermes Agent:**
+
+```bash
+hermes skills search https://agentplaybooks.ai/playbooks/<guid> --source well-known
+hermes skills install well-known:https://agentplaybooks.ai/playbooks/<guid>/.well-known/skills/<name>
 ```
 
 ---

@@ -43,7 +43,8 @@ hiányzó fájlokat:
 | `cursor` — Cursor | `.cursor/skills/<név>/SKILL.md` | `.cursor/mcp.json` | — |
 | `codex` — ChatGPT / OpenAI Codex | `.codex/skills/<név>/SKILL.md` | `.codex/config.toml` | natívan olvassa az `AGENTS.md`-t |
 | `antigravity` — Google Antigravity | `.agents/skills/<név>/SKILL.md` | — (globális konfig) | — |
-| `hermes` — Nous Hermes Agent | `~/.hermes/skills/<név>/SKILL.md` | — (globális `config.yaml`) | natívan olvassa az `AGENTS.md`-t |
+| `grok` — Grok Bot (xAI) | `.agents/skills/<név>/SKILL.md` | — (fiókszintű MCP Box; jelentve) | natívan olvassa az `AGENTS.md`-t |
+| `hermes` — Hermes Agent (Nous Research) | `.agents/skills/<név>/SKILL.md`, regisztrálva a `~/.hermes/config.yaml`-ban | `mcp_servers:` a `~/.hermes/config.yaml`-ban | natívan olvassa az `AGENTS.md`-t; persona → `~/.hermes/SOUL.md` |
 
 A felismert platformok automatikusan engedélyezettek; az `antigravity` és a
 `hermes` opt-in — vegyél fel egy bejegyzést az `agentplaybook.json`
@@ -196,8 +197,33 @@ jóváhagyás után apply).
 - **Google Antigravity**: a projektszintű skilleket a `.agents/skills/`-ből
   olvassa, ami pontosan az AgentPlaybooks hordozható tára — egy lehúzott
   playbook külön lépés nélkül Antigravity-kész.
-- **Hermes Agent**: nincs projektszintű tára, ezért az adapter a
-  `~/.hermes/skills/`-be ír (a tervben home-útvonalként jelenik meg); a
-  Hermes az `AGENTS.md` utasításokat natívan is olvassa.
+- **Grok Bot (xAI)**: rögzített gyökérlistából deríti fel a skilleket, és ebben
+  a hordozható `.agents/skills/` tár is benne van (a `.claude/skills/`, a
+  `.codex/skills/` és a `.cursor/skills/` mellett), a rendszerprompt pedig
+  közvetlenül betölti az `AGENTS.md`-t — így egy szinkronizált projekt
+  hídfájl nélkül Grok-kész. Az **MCP-szerverek a kivétel**: a Grok Bot csak
+  szerver-*azonosítók* tömbjét tárolja a `~/.grokbot/settings.json`-ban
+  (`mcpBoxServers`), a definíciók a fiók MCP Boxában élnek, tehát projektfájlból
+  nem provisionálhatók. A `sync` ezért jelenti azokat a szervereket, amiket nem
+  tudott átadni, ahelyett hogy némán elejtené őket. A megkerülés egyetlen
+  bejegyzés, egyszer: vedd fel a playbook saját MCP-végpontját
+  (`POST /api/mcp/<guid>`) a Boxba, és a skillek, a memória, a canvas és a
+  `use_secret` további szerverenkénti beállítás nélkül elér minden Grok
+  Bot-munkamenetet.
+- **Hermes Agent**: egy profil mindent a `~/.hermes`-ben tart (vagy a
+  `$HERMES_HOME`-ban). A sync nem másolja be a skilleket ebbe a profilba, hanem
+  regisztrálja a hordozható tárat a `~/.hermes/config.yaml`
+  `skills.external_dirs` listájában — így a Hermes ott olvassa őket, ahol vannak:
+  nincs duplikáció, és a következő `pull` újabb sync nélkül él. Névütközésnél a
+  Hermes saját skilljei (`~/.hermes/skills/`) nyernek. Az MCP-szerverek ugyanabba
+  a `config.yaml`-ba olvadnak be (a kommentek és a nem érintett beállítások
+  megmaradnak), a lehúzott persona pedig `~/.hermes/SOUL.md` lesz — meglévő
+  fájlt soha nem írunk felül, mert a Hermes az első indításkor legenerál egy
+  alapot. Az utasításokat natívan az `AGENTS.md`-ből olvassa, de csak az *első*
+  megtalált projekt-kontextusfájlt tölti be (`.hermes.md` → `AGENTS.md` →
+  `CLAUDE.md` → `.cursorrules`), ezért egy `AGENTS.md`-t elrejtő `.hermes.md`
+  konfliktusként jelenik meg. Publikus playbook skilljei közvetlenül a webről is
+  telepíthetők:
+  `hermes skills install well-known:https://agentplaybooks.ai/playbooks/<guid>/.well-known/skills/<név>`.
 - **Cursor**: skillek a `.cursor/skills/`-ben, MCP-szerverek a
   `.cursor/mcp.json`-ban.

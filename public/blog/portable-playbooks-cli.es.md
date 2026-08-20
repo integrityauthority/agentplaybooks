@@ -31,7 +31,7 @@ el flujo por ti.
 | Cursor | `.cursor/skills/` | `.cursor/mcp.json` |
 | ChatGPT / OpenAI Codex | `.codex/skills/` | `.codex/config.toml` |
 | Google Antigravity | `.agents/skills/` | — |
-| Nous Hermes Agent | `~/.hermes/skills/` | — |
+| Hermes Agent (Nous Research) | `.agents/skills/` (registrado en `~/.hermes/config.yaml`) | `~/.hermes/config.yaml` |
 
 Escribe un skill una vez en Claude Code, ejecuta `apb sync --apply`, y
 aparecerá también en Cursor, Codex y Antigravity — incluidas tus

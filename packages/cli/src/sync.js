@@ -1,7 +1,8 @@
 import { mkdir, readFile, rename, writeFile, copyFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { ADAPTER_TARGET_TYPES, applyAdapters, detectInstalledTargets, planAdapters } from "./adapters.js";
-import { runDoctor } from "./doctor.js";
+import { runDoctor, runGlobalDoctor } from "./doctor.js";
 import { comparableManifest, createManifest } from "./manifest.js";
 
 const MANIFEST_NAME = "agentplaybook.json";
@@ -21,6 +22,8 @@ function timestampForPath() {
 
 async function atomicWrite(manifestPath, manifest) {
   const directory = path.dirname(manifestPath);
+  // The global manifest lives in `~/.agentplaybooks/`, which may not exist yet.
+  await mkdir(directory, { recursive: true, mode: 0o700 });
   const tempPath = path.join(directory, `.${MANIFEST_NAME}.${process.pid}.tmp`);
   await writeFile(tempPath, `${JSON.stringify(manifest, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
   await rename(tempPath, manifestPath);
@@ -28,7 +31,32 @@ async function atomicWrite(manifestPath, manifest) {
 
 export async function planSync(target, options = {}) {
   const report = await runDoctor(target);
-  const manifestPath = path.join(report.inventory.root, MANIFEST_NAME);
+  return planFrom(report, path.join(report.inventory.root, MANIFEST_NAME), options);
+}
+
+/**
+ * The same plan across the user's home-scoped stores instead of one project:
+ * `~/.cursor/skills`, `~/.claude/skills`, the Hermes profile, and the portable
+ * `~/.agents/skills` that Hermes is pointed at.
+ *
+ * Two deliberate differences from a project sync:
+ *
+ * - **Skills only.** A global MCP config carries credentials — the header a
+ *   Cursor server authenticates with is sitting in `~/.cursor/mcp.json` in plain
+ *   text. Copying that into two more files would spread the secret rather than
+ *   fix it, so global sync reports MCP drift (doctor already does) and leaves
+ *   the configs alone.
+ * - **The manifest lives in `~/.agentplaybooks/`**, not in the home directory
+ *   itself: `~/agentplaybook.json` is not a file anyone asked for.
+ */
+export async function planGlobalSync(options = {}) {
+  const homedir = options.homedir ?? os.homedir();
+  const report = await runGlobalDoctor(options);
+  const manifestPath = path.join(homedir, ".agentplaybooks", MANIFEST_NAME);
+  return planFrom(report, manifestPath, { ...options, homedir, skipMcp: true, scope: "global" });
+}
+
+async function planFrom(report, manifestPath, options = {}) {
   const existing = await readExisting(manifestPath);
   const discovered = createManifest(report);
   const manifest = existing?.apiVersion === discovered.apiVersion && existing?.kind === discovered.kind
@@ -43,7 +71,7 @@ export async function planSync(target, options = {}) {
   const writableTargets = manifest.spec.targets
     .filter((target) => target.enabled && ADAPTER_TARGET_TYPES.includes(target.type));
   const suggestedTargets = writableTargets.length === 0
-    ? (await detectInstalledTargets(options.homedir)).filter(
+    ? (await detectInstalledTargets(options.homedir, options.env, options.platform)).filter(
       (type) => !manifest.spec.targets.some((target) => target.type === type && target.enabled),
     )
     : [];
@@ -59,6 +87,7 @@ export async function planSync(target, options = {}) {
     fileActions: adapters.actions,
     conflicts: adapters.conflicts,
     suggestedTargets,
+    scope: options.scope ?? "project",
   };
 }
 
@@ -132,7 +161,20 @@ function printTargetSuggestion(plan) {
   console.log(`Enable one with, for example: agentplaybooks sync --target=${plan.suggestedTargets[0]} --apply`);
 }
 
+function actionDetail(action) {
+  const parts = [];
+  if (action.from) parts.push(`from ${action.from}`);
+  if (action.servers?.length) parts.push(`+ ${action.servers.join(", ")}`);
+  // A registered skill directory is the whole point of the hermes target, so it
+  // has to be visible in the plan rather than hidden inside the file diff.
+  if (action.externalDirs?.length) parts.push(`external skills: ${action.externalDirs.join(", ")}`);
+  return parts.length > 0 ? ` (${parts.join("; ")})` : "";
+}
+
 export function printSyncPlan(plan) {
+  if (plan.scope === "global") {
+    console.log("Scope: your home-scoped agent stores. MCP configuration is left alone — see 'doctor --global' for drift.");
+  }
   if (!plan.changed && plan.conflicts.length === 0) {
     console.log(`${MANIFEST_NAME} and platform files are already in sync.`);
     printTargetSuggestion(plan);
@@ -149,11 +191,7 @@ export function printSyncPlan(plan) {
     }
   }
   for (const action of plan.fileActions) {
-    if (action.kind === "skill" || action.kind === "instructions") {
-      console.log(`  [${action.target}] ${action.action} ${action.path} (from ${action.from})`);
-    } else {
-      console.log(`  [${action.target}] ${action.action} ${action.path} (+ ${action.servers.join(", ")})`);
-    }
+    console.log(`  [${action.target}] ${action.action} ${action.path}${actionDetail(action)}`);
   }
   for (const item of plan.conflicts) {
     console.log(`  [conflict:${item.target}] ${item.kind} '${item.name}': ${item.reason}`);

@@ -129,12 +129,12 @@ test("pull writes remote MCP servers into the portable store and sync fans them 
   // deployment target: sync must say so instead of doing nothing quietly.
   const home = await fixture();
   await mkdir(path.join(home, ".claude"), { recursive: true });
-  const bareplan = await planSync(root, { homedir: home });
+  const bareplan = await planSync(root, { homedir: home, env: {} });
   assert.deepEqual(bareplan.fileActions, []);
   assert.deepEqual(bareplan.suggestedTargets, ["claude"]);
 
   // Enabling a target is what distributes the portable store to real files.
-  const syncPlan = await planSync(root, { homedir: home, targets: ["claude"] });
+  const syncPlan = await planSync(root, { homedir: home, env: {}, targets: ["claude"] });
   await applySync(syncPlan);
   const claudeConfig = await readJson(root, ".mcp.json");
   assert.ok(claudeConfig.mcpServers.deploy);
@@ -144,7 +144,7 @@ test("pull writes remote MCP servers into the portable store and sync fans them 
   const pullAgain = await planPull(root, "abc123", { url: URL_BASE, apiKey: API_KEY, fetchImpl: api.fetchImpl });
   assert.deepEqual(pullAgain.actions, []);
   assert.deepEqual(pullAgain.conflicts, []);
-  const syncAgain = await planSync(root, { homedir: home });
+  const syncAgain = await planSync(root, { homedir: home, env: {} });
   assert.deepEqual(syncAgain.fileActions, []);
   assert.deepEqual(syncAgain.suggestedTargets, []);
   const pushAgain = await planPush(root, { url: URL_BASE, apiKey: API_KEY, fetchImpl: api.fetchImpl });

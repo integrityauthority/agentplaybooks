@@ -10,7 +10,11 @@ export const exportedSkillSchema = {
     id: { type: "string", format: "uuid" },
     name: { type: "string", description: "Skill name" },
     description: { type: ["string", "null"], description: "When the skill should be used" },
-    content: { type: ["string", "null"], description: "SKILL.md instruction body" },
+    // The whole document, not just the body: keeping the author's frontmatter is
+    // what lets a skill written for one client keep the fields only that client
+    // understands (`version`, `platforms`, `metadata.<client>.*`) across a
+    // round trip.
+    content: { type: ["string", "null"], description: "The SKILL.md document, including its YAML frontmatter when the author wrote one" },
     licence: { type: ["string", "null"] },
     priority: { type: ["integer", "null"] },
   },
