@@ -69,7 +69,7 @@ app.get("/", async (c) => {
   const user = await getAuthenticatedUser(c.req.raw);
   const apiKey = !user ? await validateApiKey(c.req.raw, "secrets:read") : null;
 
-  const playbook = await getPlaybookByGuid(guid, user?.id ?? null);
+  const playbook = await getPlaybookByGuid(guid, user?.id ?? null, apiKey?.playbooks.id ?? null);
   if (!playbook) return c.json({ error: "Playbook not found" }, 404);
 
   // Only owner or API key holder for this playbook can access secrets
@@ -114,7 +114,7 @@ app.post("/", async (c) => {
   const user = await getAuthenticatedUser(c.req.raw);
   const apiKey = !user ? await validateApiKey(c.req.raw, "secrets:write") : null;
 
-  const playbook = await getPlaybookByGuid(guid, user?.id ?? null);
+  const playbook = await getPlaybookByGuid(guid, user?.id ?? null, apiKey?.playbooks.id ?? null);
   if (!playbook) return c.json({ error: "Playbook not found" }, 404);
 
   const isOwner = user && playbook.user_id === user.id;
@@ -241,7 +241,7 @@ app.get("/reveal/:name", async (c) => {
     return c.json({ error: "Authentication required." }, 401);
   }
 
-  const playbook = await getPlaybookByGuid(guid, user?.id ?? null);
+  const playbook = await getPlaybookByGuid(guid, user?.id ?? null, apiKey?.playbooks.id ?? null);
   if (!playbook) return c.json({ error: "Playbook not found" }, 404);
 
   const isOwner = user && playbook.user_id === user.id;
@@ -338,7 +338,7 @@ app.put("/:name", async (c) => {
   const user = await getAuthenticatedUser(c.req.raw);
   const apiKey = !user ? await validateApiKey(c.req.raw, "secrets:write") : null;
 
-  const playbook = await getPlaybookByGuid(guid, user?.id ?? null);
+  const playbook = await getPlaybookByGuid(guid, user?.id ?? null, apiKey?.playbooks.id ?? null);
   if (!playbook) return c.json({ error: "Playbook not found" }, 404);
 
   const isOwner = user && playbook.user_id === user.id;
@@ -501,7 +501,7 @@ app.post("/proxy", async (c) => {
   const user = await getAuthenticatedUser(c.req.raw);
   const apiKey = !user ? await validateApiKey(c.req.raw, "secrets:read") : null;
 
-  const playbook = await getPlaybookByGuid(guid, user?.id ?? null);
+  const playbook = await getPlaybookByGuid(guid, user?.id ?? null, apiKey?.playbooks.id ?? null);
   if (!playbook) return c.json({ error: "Playbook not found" }, 404);
 
   const isOwner = user && playbook.user_id === user.id;
