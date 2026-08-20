@@ -419,6 +419,9 @@ export const SECRET_AUDIT_OPERATIONS = [
   'secret.reveal',
   'secret.use',
   'secret.list',
+  // A consent flow completed server-side: the client secret went out and the
+  // refresh token came back, neither ever reaching the caller.
+  'secret.oauth_exchange',
 ] as const;
 
 export type SecretAuditOperation = typeof SECRET_AUDIT_OPERATIONS[number];

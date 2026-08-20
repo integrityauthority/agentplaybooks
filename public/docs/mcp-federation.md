@@ -107,14 +107,36 @@ does it once:
 agentplaybooks auth gmail --client-id=your-app.apps.googleusercontent.com
 ```
 
-It reads the template from `/api/connections`, runs authorization-code + PKCE
-against a loopback redirect on `127.0.0.1`, and stores the result under the name
-the template declares — so nothing has to be pasted anywhere. The refresh token
-is never printed.
+It reads the template from `/api/connections` and runs authorization-code + PKCE
+against a loopback redirect on `127.0.0.1`. What it does **not** do is exchange
+the code: it posts the code and the verifier to
+`POST /api/playbooks/:guid/secrets/oauth-exchange`, and the server completes the
+exchange.
 
-The client **secret** is read from the environment (named after the template's
-`client_secret`), never from a flag, where it would land in shell history and in
-process listings. A public PKCE client has no secret and needs none.
+That split is deliberate. Two credentials pass through an exchange, and both
+belong in the vault: the **client secret** goes out with the request, and the
+**refresh token** comes back in the response. Doing it server-side means neither
+touches the developer's machine — the CLI only ever holds the authorization code
+and the verifier, which are single-use and short-lived.
+
+Store the client secret in the vault first:
+
+```bash
+agentplaybooks secrets push GOOGLE_CLIENT_SECRET
+agentplaybooks auth gmail --client-id=your-app.apps.googleusercontent.com
+```
+
+Running `auth` without it says so and names the command. A public PKCE client
+has no secret and needs none.
+
+The refresh token is stored under the name the template declares, pinned to the
+token endpoint's host, and marked non-revealable — it exists to be spent
+server-side, so nothing needs to read it back. The endpoint's response carries
+the secret's name and whether it was created or rotated, and no token.
+
+The token endpoint is read from the catalogue by template id and **never** from
+the request. A caller-supplied token URL would make that endpoint hand the client
+secret to any address the caller names.
 
 Access tokens are cached until shortly before they expire. Because some
 providers rotate the refresh token on each use, the cache key includes a digest

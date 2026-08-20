@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { fetchTemplate, obtainRefreshToken, planConsent } from "../src/auth-command.js";
+import { completeConsentViaServer, fetchTemplate, planConsent } from "../src/auth-command.js";
 
 const gmail = {
   id: "gmail",
@@ -46,7 +46,6 @@ test("fetchTemplate says how to list them when the id is wrong", async () => {
 test("planConsent pulls out both endpoints and the secret name", () => {
   const plan = planConsent(gmail);
   assert.equal(plan.authorizationUrl, "https://accounts.google.com/o/oauth2/v2/auth");
-  assert.equal(plan.tokenUrl, "https://oauth2.googleapis.com/token");
   assert.equal(plan.refreshSecretName, "GMAIL_REFRESH_TOKEN");
   assert.deepEqual(plan.extraParams, { access_type: "offline", prompt: "consent" });
 });
@@ -63,14 +62,14 @@ test("planConsent redirects a paste-in template to the right command", () => {
 });
 
 test("planConsent refuses a template missing an endpoint", () => {
-  const noAuthUrl = { ...gmail, authorization_url: undefined };
-  assert.throws(() => planConsent(noAuthUrl), /authorization_url/);
-
-  const noTokenUrl = {
-    ...gmail,
-    transport_config: { auth: { ...gmail.transport_config.auth, token_url: undefined } },
-  };
-  assert.throws(() => planConsent(noTokenUrl), /token_url/);
+  assert.throws(() => planConsent({ ...gmail, authorization_url: undefined }), /authorization_url/);
+  assert.throws(
+    () => planConsent({
+      ...gmail,
+      transport_config: { auth: { ...gmail.transport_config.auth, token_url: undefined } },
+    }),
+    /token_url/,
+  );
 });
 
 test("planConsent refuses a template that does not name the secret", () => {
@@ -94,138 +93,106 @@ function fakeServer(searchParams) {
   };
 }
 
-test("the whole flow returns the refresh token", async () => {
+test("the code goes to our server, never to the provider's token endpoint", async () => {
+  // This is the whole point of the server-side exchange: the CLI holds the code
+  // and the verifier, and nothing else.
   const plan = planConsent(gmail);
-  let openedUrl = null;
-  let tokenBody = null;
-  const { stub, wasClosed } = fakeServer("state=STATE&code=THE-CODE");
+  const { stub, wasClosed } = fakeServer("");
+  const requests = [];
 
-  // The state has to match what buildAuthorizeUrl put in the URL, so it is read
-  // back out of the URL the browser was asked to open.
-  const refreshToken = await obtainRefreshToken(plan, {
+  const result = await completeConsentViaServer(plan, {
+    url: "https://apb.test",
+    guid: "guid-1",
+    playbookKey: "apb_live_key",
     clientId: "client-abc",
-    clientSecret: "client-secret",
     openBrowser: async (url) => {
-      openedUrl = new URL(url);
-      const state = openedUrl.searchParams.get("state");
+      const state = new URL(url).searchParams.get("state");
       stub.callback = Promise.resolve(new URLSearchParams({ state, code: "THE-CODE" }));
     },
     startServer: () => stub,
     fetchImpl: async (url, init) => {
-      assert.equal(url, "https://oauth2.googleapis.com/token");
-      tokenBody = new URLSearchParams(String(init.body));
-      return jsonResponse({ access_token: "at", refresh_token: "the-refresh-token" });
+      requests.push({ url, init });
+      return jsonResponse({ stored: "GMAIL_REFRESH_TOKEN", rotated: false, provider: "Gmail" });
     },
   });
 
-  assert.equal(refreshToken, "the-refresh-token");
-  assert.equal(openedUrl.searchParams.get("access_type"), "offline");
-  assert.equal(openedUrl.searchParams.get("redirect_uri"), "http://127.0.0.1:41234/callback");
-  assert.equal(tokenBody.get("code"), "THE-CODE");
-  assert.equal(tokenBody.get("grant_type"), "authorization_code");
-  assert.ok(tokenBody.get("code_verifier"));
-  // The verifier is sent here and nowhere else.
-  assert.ok(!openedUrl.toString().includes(tokenBody.get("code_verifier")));
+  assert.equal(requests.length, 1, "exactly one request, and it is to us");
+  assert.equal(requests[0].url, "https://apb.test/api/playbooks/guid-1/secrets/oauth-exchange");
+  // Nothing was sent to Google.
+  assert.ok(!requests.some((r) => String(r.url).includes("googleapis.com")));
+
+  const body = JSON.parse(requests[0].init.body);
+  assert.equal(body.template_id, "gmail");
+  assert.equal(body.code, "THE-CODE");
+  assert.ok(body.code_verifier);
+  assert.match(body.redirect_uri, /^http:\/\/127\.0\.0\.1:41234\/callback$/);
+  // The client secret is not ours to send.
+  assert.equal("client_secret" in body, false);
+  // The token URL is the server's to decide, from the catalogue.
+  assert.equal("token_url" in body, false);
+
+  assert.equal(result.stored, "GMAIL_REFRESH_TOKEN");
   assert.ok(wasClosed(), "the loopback server must not be left listening");
 });
 
-test("a mismatched state fails before any token is requested", async () => {
+test("a mismatched state stops the flow before the server is called", async () => {
   const plan = planConsent(gmail);
-  const { stub, wasClosed } = fakeServer("state=NOT-OURS&code=abc");
-  let exchanged = false;
-
+  const { stub } = fakeServer("state=NOT-OURS&code=abc");
+  let called = false;
   await assert.rejects(
-    obtainRefreshToken(plan, {
+    completeConsentViaServer(plan, {
+      url: "https://apb.test",
+      guid: "g",
+      playbookKey: "k",
       clientId: "c",
       openBrowser: async () => {},
       startServer: () => stub,
-      fetchImpl: async () => { exchanged = true; return jsonResponse({}); },
+      fetchImpl: async () => { called = true; return jsonResponse({}); },
     }),
     /did not come from this request/,
   );
-  assert.equal(exchanged, false, "a foreign code must never be exchanged");
-  assert.ok(wasClosed());
+  assert.equal(called, false, "a foreign code must never be forwarded");
 });
 
-test("a provider refusal is reported in the provider's words", async () => {
+test("the server's error is passed through rather than paraphrased", async () => {
+  // The useful case is the client secret not being in the vault yet, where the
+  // server's message names the command to run.
   const plan = planConsent(gmail);
   const { stub } = fakeServer("");
   await assert.rejects(
-    obtainRefreshToken(plan, {
-      clientId: "c",
-      openBrowser: async (url) => {
-        const state = new URL(url).searchParams.get("state");
-        stub.callback = Promise.resolve(new URLSearchParams({
-          state, error: "access_denied", error_description: "User declined",
-        }));
-      },
-      startServer: () => stub,
-      fetchImpl: async () => jsonResponse({}),
-    }),
-    /User declined/,
-  );
-});
-
-test("a token response without a refresh token explains why", async () => {
-  const plan = planConsent(gmail);
-  const { stub } = fakeServer("");
-  await assert.rejects(
-    obtainRefreshToken(plan, {
+    completeConsentViaServer(plan, {
+      url: "https://apb.test",
+      guid: "g",
+      playbookKey: "k",
       clientId: "c",
       openBrowser: async (url) => {
         const state = new URL(url).searchParams.get("state");
         stub.callback = Promise.resolve(new URLSearchParams({ state, code: "c" }));
       },
       startServer: () => stub,
-      fetchImpl: async () => jsonResponse({ access_token: "at" }),
-    }),
-    /access_type=offline/,
-  );
-});
-
-test("a failed exchange does not echo the whole response body", async () => {
-  // The body can contain the authorization code; only the named error fields
-  // are safe to show.
-  const plan = planConsent(gmail);
-  const { stub } = fakeServer("");
-  await assert.rejects(
-    obtainRefreshToken(plan, {
-      clientId: "c",
-      openBrowser: async (url) => {
-        const state = new URL(url).searchParams.get("state");
-        stub.callback = Promise.resolve(new URLSearchParams({ state, code: "SECRET-CODE" }));
-      },
-      startServer: () => stub,
       fetchImpl: async () => jsonResponse(
-        { error: "invalid_grant", error_description: "Bad code", code: "SECRET-CODE" },
+        { error: "'GOOGLE_CLIENT_SECRET' is not in this playbook's vault. Store it first: agentplaybooks secrets push GOOGLE_CLIENT_SECRET" },
         400,
       ),
     }),
-    (error) => {
-      assert.match(error.message, /Bad code/);
-      assert.ok(!error.message.includes("SECRET-CODE"));
-      return true;
-    },
+    /secrets push GOOGLE_CLIENT_SECRET/,
   );
 });
 
-test("a public client completes without a client secret", async () => {
+test("a rotation is reported as such", async () => {
   const plan = planConsent(gmail);
   const { stub } = fakeServer("");
-  let tokenBody = null;
-  const token = await obtainRefreshToken(plan, {
+  const result = await completeConsentViaServer(plan, {
+    url: "https://apb.test",
+    guid: "g",
+    playbookKey: "k",
     clientId: "c",
-    clientSecret: null,
     openBrowser: async (url) => {
       const state = new URL(url).searchParams.get("state");
       stub.callback = Promise.resolve(new URLSearchParams({ state, code: "c" }));
     },
     startServer: () => stub,
-    fetchImpl: async (_url, init) => {
-      tokenBody = new URLSearchParams(String(init.body));
-      return jsonResponse({ refresh_token: "rt" });
-    },
+    fetchImpl: async () => jsonResponse({ stored: "GMAIL_REFRESH_TOKEN", rotated: true }),
   });
-  assert.equal(token, "rt");
-  assert.equal(tokenBody.has("client_secret"), false);
+  assert.equal(result.rotated, true);
 });

@@ -5,6 +5,13 @@ import { getPlaybookByGuid } from "@/app/api/_shared/guards";
 import { encryptSecret, decryptSecret } from "@/lib/crypto";
 import { checkSecretDestination, normalizeAllowedHosts } from "@/lib/secret-destinations";
 import {
+  buildExchangeBody,
+  isLoopbackRedirect,
+  isPlanFailure,
+  planExchange,
+  readExchangeResponse,
+} from "@/lib/oauth-exchange";
+import {
   destinationHostOf,
   recordSecretAudit,
   auditActor,
@@ -683,6 +690,211 @@ app.post("/proxy", async (c) => {
     });
     return c.json({ error: `HTTP request failed: ${msg}` }, 502);
   }
+});
+
+/**
+ * POST /api/playbooks/:guid/secrets/oauth-exchange
+ *
+ * Completes a consent flow the CLI started. The CLI can obtain an authorization
+ * code — that needs a browser — but it should not be what exchanges it: two
+ * credentials pass through an exchange and both belong in the vault. The client
+ * secret goes out with the request and never leaves this server; the refresh
+ * token comes back and is written straight to the vault. The caller learns
+ * whether it worked, and nothing else.
+ */
+app.post("/oauth-exchange", async (c) => {
+  const guid = c.req.param("guid");
+  if (!guid) return c.json({ error: "Missing playbook GUID" }, 400);
+
+  // This writes a secret, so it needs write access rather than read.
+  const user = await getAuthenticatedUser(c.req.raw);
+  const apiKey = !user ? await validateApiKey(c.req.raw, "secrets:write") : null;
+
+  const playbook = await getPlaybookByGuid(guid, user?.id ?? null, apiKey?.playbooks.id ?? null);
+  if (!playbook) return c.json({ error: "Playbook not found" }, 404);
+
+  const isOwner = user && playbook.user_id === user.id;
+  const isApiKeyForPlaybook = apiKey && apiKey.playbooks.id === playbook.id;
+  const audit = auditContext(c, playbook.id, user, apiKey);
+  const operation = "secret.oauth_exchange";
+  if (!isOwner && !isApiKeyForPlaybook) {
+    await recordSecretAudit(audit, { operation, status: "denied", reason: "not_authorized" });
+    return c.json({ error: "Forbidden" }, 403);
+  }
+
+  const body = await c.req.json().catch(() => ({}));
+  const { template_id, code, code_verifier, redirect_uri, client_id } = body ?? {};
+
+  const plan = planExchange(template_id);
+  if (isPlanFailure(plan)) {
+    await recordSecretAudit(audit, { operation, status: "error", reason: "bad_template" });
+    return c.json({ error: plan.error }, plan.status as 400);
+  }
+  const destinationHost = destinationHostOf(plan.tokenUrl);
+
+  for (const [field, value] of Object.entries({ code, code_verifier, client_id })) {
+    if (typeof value !== "string" || value.length === 0) {
+      return c.json({ error: `${field} is required.` }, 400);
+    }
+  }
+  if (!isLoopbackRedirect(redirect_uri)) {
+    return c.json({ error: "redirect_uri must be the loopback address the consent flow used." }, 400);
+  }
+
+  const supabase = getServiceSupabase();
+
+  // The client secret is read here and never returned. If it is not in the vault
+  // the order of operations is wrong, and saying so beats attempting an exchange
+  // the provider would reject for a reason it will not explain.
+  let clientSecret: string | null = null;
+  if (plan.clientSecretName) {
+    const { data: row } = await supabase
+      .from("secrets")
+      .select("*")
+      .eq("playbook_id", playbook.id)
+      .eq("name", plan.clientSecretName)
+      .maybeSingle();
+    if (!row) {
+      await recordSecretAudit(audit, {
+        operation,
+        status: "error",
+        secretName: plan.clientSecretName,
+        target: destinationHost,
+        reason: "client_secret_missing",
+      });
+      return c.json({
+        error: `'${plan.clientSecretName}' is not in this playbook's vault. Store it first: `
+          + `agentplaybooks secrets push ${plan.clientSecretName}`,
+      }, 400);
+    }
+    // A host allow-list on the client secret is honoured against the token
+    // endpoint, exactly as it would be for the secrets proxy.
+    const allowed = checkSecretDestination(plan.tokenUrl, row.allowed_hosts);
+    if (!allowed.allowed) {
+      await recordSecretAudit(audit, {
+        operation,
+        status: "denied",
+        secretName: plan.clientSecretName,
+        target: destinationHost,
+        reason: "destination_not_allowed",
+      });
+      return c.json({ error: allowed.reason }, 403);
+    }
+    try {
+      clientSecret = await decryptSecret(
+        { encrypted_value: row.encrypted_value, iv: row.iv, auth_tag: row.auth_tag },
+        playbook.user_id,
+        { playbookId: playbook.id, secretName: row.name },
+      );
+    } catch {
+      await recordSecretAudit(audit, {
+        operation,
+        status: "error",
+        secretName: plan.clientSecretName,
+        reason: "decrypt_failed",
+      });
+      return c.json({ error: `Could not decrypt '${plan.clientSecretName}'.` }, 500);
+    }
+  }
+
+  let exchange: ReturnType<typeof readExchangeResponse>;
+  try {
+    const response = await fetch(plan.tokenUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+      body: buildExchangeBody({
+        code,
+        redirectUri: redirect_uri,
+        clientId: client_id,
+        clientSecret,
+        codeVerifier: code_verifier,
+      }),
+      redirect: "manual",
+      signal: AbortSignal.timeout(30_000),
+    });
+    exchange = readExchangeResponse(response.status, await response.json().catch(() => null));
+  } catch {
+    await recordSecretAudit(audit, {
+      operation, status: "error", target: destinationHost, reason: "token_request_failed",
+    });
+    return c.json({ error: "Could not reach the provider's token endpoint." }, 502);
+  }
+
+  if (!exchange.ok) {
+    await recordSecretAudit(audit, {
+      operation, status: "error", target: destinationHost, reason: "exchange_rejected",
+    });
+    return c.json({ error: exchange.error }, exchange.status as 502);
+  }
+
+  let encrypted: Awaited<ReturnType<typeof encryptSecret>>;
+  try {
+    encrypted = await encryptSecret(exchange.refreshToken, playbook.user_id, {
+      playbookId: playbook.id,
+      secretName: plan.refreshSecretName,
+    });
+  } catch {
+    await recordSecretAudit(audit, {
+      operation, status: "error", secretName: plan.refreshSecretName, reason: "encryption_failed",
+    });
+    return c.json({ error: "Secrets vault is not configured correctly on the server." }, 500);
+  }
+
+  const { data: existing } = await supabase
+    .from("secrets")
+    .select("id")
+    .eq("playbook_id", playbook.id)
+    .eq("name", plan.refreshSecretName)
+    .maybeSingle();
+
+  const actor = user?.id || apiKey?.key_prefix || null;
+  const stored = existing
+    ? await supabase.from("secrets").update({
+      encrypted_value: encrypted.encrypted_value,
+      iv: encrypted.iv,
+      auth_tag: encrypted.auth_tag,
+      rotated_at: new Date().toISOString(),
+      updated_by: actor,
+    }).eq("id", existing.id)
+    : await supabase.from("secrets").insert({
+      playbook_id: playbook.id,
+      name: plan.refreshSecretName,
+      description: `${plan.template.name} refresh token (obtained by consent)`,
+      category: "token",
+      expires_at: null,
+      // Never revealable: a refresh token exists to be spent server-side, and
+      // nobody needs to read it back.
+      allow_api_key_reveal: false,
+      encrypted_value: encrypted.encrypted_value,
+      iv: encrypted.iv,
+      auth_tag: encrypted.auth_tag,
+      // A refresh token is only ever sent back to the provider that issued it,
+      // so it is pinned on the way in rather than left open.
+      allowed_hosts: [destinationHost].filter((host): host is string => !!host),
+      created_by: actor,
+      updated_by: actor,
+    });
+
+  if (stored.error) {
+    await recordSecretAudit(audit, {
+      operation, status: "error", secretName: plan.refreshSecretName, reason: "store_failed",
+    });
+    return c.json({ error: stored.error.message }, 500);
+  }
+
+  await recordSecretAudit(audit, {
+    operation,
+    status: "success",
+    secretName: plan.refreshSecretName,
+    target: destinationHost,
+  });
+
+  // Deliberately no token in the response.
+  return c.json({
+    stored: plan.refreshSecretName,
+    rotated: Boolean(existing),
+    provider: plan.template.name,
+  }, existing ? 200 : 201);
 });
 
 export { app };
