@@ -1,6 +1,5 @@
 import { decryptSecret } from "@/lib/crypto";
 import { referencedSecretNames } from "@/lib/mcp/secret-references";
-import { decryptMcpSecrets } from "@/lib/mcp/secrets";
 import { checkSecretDestination } from "@/lib/secret-destinations";
 import { getServiceSupabase } from "./supabase";
 import type { MCPServer, Secret } from "@/lib/supabase/types";
@@ -9,23 +8,26 @@ import type { MCPServer, Secret } from "@/lib/supabase/types";
  * Secret resolution for federated MCP/OpenAPI calls.
  *
  * A server's transport config references credentials by name
- * (`auth.token_secret: "SEARCH_TOKEN"`). Those names used to resolve only from
- * the server's own encrypted payload (`mcp_server_secrets`), which forced the
- * same credential to be stored twice when it also lived in the playbook's
- * Secrets vault. Resolution is now two steps:
+ * (`auth.token_secret: "SEARCH_TOKEN"`), and those names resolve from the
+ * playbook's Secrets vault. There is exactly one place a credential lives.
  *
- *   1. the server's own payload — authoritative when it defines the name, so
- *      nothing that works today changes meaning;
- *   2. the playbook vault, by exact name.
+ * There used to be a second store: an encrypted payload per MCP server
+ * (`mcp_server_secrets`), with its own weaker crypto — a key that was just
+ * SHA-256 of a passphrase, unsalted, with no AAD binding the ciphertext to the
+ * server it belonged to. It also had no rotation, no expiry, no usage
+ * accounting and no audit trail, all of which the vault has. Keeping it meant
+ * the credentials most likely to be worth stealing sat in the weaker box.
  *
  * Vault decryption happens only for the names the config actually references,
  * never wholesale. Injecting a vault value into an outbound federated request is
  * proxy-style use — the value goes to the upstream service, not to the caller —
  * so it is allowed regardless of the secret's reveal flag, exactly like
  * `use_secret`. An `allowed_hosts` list set on the secret is honoured against
- * every destination the server config can reach; a blocked or undecryptable
- * secret is simply left unresolved, and federation reports MISSING_SECRET with
- * the name, which is a far clearer failure than a silently absent header.
+ * every destination the server config can reach, which is the concrete gain
+ * from this move: an upstream credential can now be pinned to its own upstream
+ * host. A blocked or undecryptable secret is simply left unresolved, and
+ * federation reports MISSING_SECRET with the name, which is a far clearer
+ * failure than a silently absent header.
  */
 
 
@@ -48,8 +50,8 @@ async function recordVaultUse(secrets: Secret[]) {
 }
 
 /**
- * Decrypt the credentials a federated server needs: its own payload first,
- * then the playbook vault for referenced names the payload does not define.
+ * Decrypt the credentials a federated server needs, by name, from the
+ * playbook's Secrets vault.
  */
 export async function loadFederationSecrets(
   server: MCPServer,
@@ -57,16 +59,8 @@ export async function loadFederationSecrets(
 ): Promise<Record<string, unknown>> {
   const service = getServiceSupabase();
 
-  const { data: row } = await service
-    .from("mcp_server_secrets")
-    .select("encrypted_payload, iv")
-    .eq("mcp_server_id", server.id)
-    .maybeSingle();
-  const own = row ? await decryptMcpSecrets(row.encrypted_payload, row.iv, server.id) : {};
-
-  const missing = referencedSecretNames(server.transport_config)
-    .filter((name) => own[name] === undefined);
-  if (missing.length === 0) return own;
+  const referenced = referencedSecretNames(server.transport_config);
+  if (referenced.length === 0) return {};
 
   // The vault key is derived per owner, so the owner id is required to decrypt.
   const { data: playbook } = await service
@@ -74,17 +68,17 @@ export async function loadFederationSecrets(
     .select("id, user_id")
     .eq("id", playbookId)
     .maybeSingle();
-  if (!playbook) return own;
+  if (!playbook) return {};
 
   const { data: vaultRows } = await service
     .from("secrets")
     .select("*")
     .eq("playbook_id", playbookId)
-    .in("name", missing);
-  if (!vaultRows || vaultRows.length === 0) return own;
+    .in("name", referenced);
+  if (!vaultRows || vaultRows.length === 0) return {};
 
   const destinations = serverDestinations(server.transport_config);
-  const resolved: Record<string, unknown> = { ...own };
+  const resolved: Record<string, unknown> = {};
   const used: Secret[] = [];
 
   for (const secret of vaultRows as Secret[]) {

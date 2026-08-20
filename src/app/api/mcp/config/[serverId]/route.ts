@@ -2,7 +2,6 @@ import { handle } from "hono/vercel";
 import { createApiApp } from "@/app/api/_shared/hono";
 import { getUserFromAuthOrApiKey } from "@/app/api/_shared/auth";
 import { getServiceSupabase } from "@/app/api/_shared/supabase";
-import { encryptMcpSecrets } from "@/lib/mcp/secrets";
 import { FederationError, listFederatedResources, listFederatedTools } from "@/lib/mcp/federation";
 import { loadFederationSecrets } from "@/app/api/_shared/federation-secrets";
 import type { MCPServer } from "@/lib/supabase/types";
@@ -26,18 +25,11 @@ app.get("/", async (c) => {
   if (!serverId) return c.json({ error: "Missing MCP server ID" }, 400);
   const server = await ownedServer(c.req.raw, serverId);
   if (!server) return c.json({ error: "MCP server not found" }, 404);
-  const { data: secretRow } = await getServiceSupabase()
-    .from("mcp_server_secrets")
-    .select("mcp_server_id, updated_at")
-    .eq("mcp_server_id", serverId)
-    .maybeSingle();
   return c.json({
     id: server.id,
     name: server.name,
     transport_type: server.transport_type,
     transport_config: server.transport_config || {},
-    has_secrets: !!secretRow,
-    secrets_updated_at: secretRow?.updated_at || null,
   });
 });
 
@@ -49,7 +41,6 @@ app.put("/", async (c) => {
   const body = await c.req.json<{
     transport_type?: "http" | "sse" | "openapi";
     transport_config?: Record<string, unknown>;
-    secrets?: Record<string, unknown>;
   }>();
   const supabase = getServiceSupabase();
   if (body.transport_type || body.transport_config) {
@@ -59,29 +50,6 @@ app.put("/", async (c) => {
     }).eq("id", serverId);
     if (error) return c.json({ error: error.message }, 400);
   }
-  if (body.secrets) {
-    const encrypted = await encryptMcpSecrets(body.secrets, serverId);
-    const { error } = await supabase.from("mcp_server_secrets").upsert({
-      mcp_server_id: serverId,
-      encrypted_payload: encrypted.encryptedPayload,
-      iv: encrypted.iv,
-      updated_at: new Date().toISOString(),
-    });
-    if (error) return c.json({ error: error.message }, 400);
-  }
-  return c.json({ success: true });
-});
-
-app.delete("/", async (c) => {
-  const serverId = c.req.param("serverId");
-  if (!serverId) return c.json({ error: "Missing MCP server ID" }, 400);
-  const server = await ownedServer(c.req.raw, serverId);
-  if (!server) return c.json({ error: "MCP server not found" }, 404);
-  const { error } = await getServiceSupabase()
-    .from("mcp_server_secrets")
-    .delete()
-    .eq("mcp_server_id", serverId);
-  if (error) return c.json({ error: error.message }, 400);
   return c.json({ success: true });
 });
 

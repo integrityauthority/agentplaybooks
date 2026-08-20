@@ -29,8 +29,6 @@ services:
       # Secrets vault (64 hex characters). Rotating this makes existing
       # secrets undecryptable -- there is no re-encryption tooling yet.
       SECRETS_ENCRYPTION_KEY: ${SECRETS_ENCRYPTION_KEY}
-      # Required only if you use federated MCP/OpenAPI servers.
-      MCP_SECRET_ENCRYPTION_KEY: ${MCP_SECRET_ENCRYPTION_KEY:-}
       # Optional. Setting this replaces the default CORS allow-list, which is
       # what a self-hosted instance wants.
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}

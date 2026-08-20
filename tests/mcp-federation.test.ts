@@ -9,7 +9,6 @@ import {
   parseFederatedResourceUri,
   readFederatedResource,
 } from "@/lib/mcp/federation";
-import { decryptMcpSecrets, encryptMcpSecrets } from "@/lib/mcp/secrets";
 import type { MCPServer } from "@/lib/supabase/types";
 import { exportSkill, exportedMemoryFields, exportedSkillSchema } from "@/lib/playbook-export-schema";
 
@@ -155,17 +154,6 @@ describe("MCP federation", () => {
       {},
       { fetch: fetchMock as typeof fetch },
     )).rejects.toMatchObject({ code: "UPSTREAM_TIMEOUT", status: 504 });
-  });
-});
-
-describe("MCP secret encryption", () => {
-  it("round-trips AES-GCM encrypted payloads", async () => {
-    const key = "test-key-with-at-least-thirty-two-characters";
-    const serverId = "12345678-1234-1234-1234-123456789abc";
-    const encrypted = await encryptMcpSecrets({ token: "secret", headers: { "X-Key": "value" } }, serverId, key);
-    expect(encrypted.encryptedPayload).not.toContain("secret");
-    await expect(decryptMcpSecrets(encrypted.encryptedPayload, encrypted.iv, serverId, key))
-      .resolves.toEqual({ token: "secret", headers: { "X-Key": "value" } });
   });
 });
 
