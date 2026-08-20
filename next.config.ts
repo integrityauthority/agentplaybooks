@@ -44,10 +44,9 @@ const nextConfig: NextConfig = {
     unoptimized: true,
   },
 
-  // ESLint should run during build - fix lint errors instead of ignoring them
-  eslint: {
-    ignoreDuringBuilds: false,
-  },
+  // Next 16 removed the built-in lint step from `next build`, and with it the
+  // `eslint` config key. Linting stays a gate, it just lives where it already
+  // ran: `npm run lint` in CI.
 };
 
 export default withNextIntl(nextConfig);
