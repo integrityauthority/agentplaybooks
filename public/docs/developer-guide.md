@@ -146,10 +146,55 @@ npm run dev
 ### Database Setup
 
 1. Create a Supabase project at [supabase.com](https://supabase.com)
-2. Run the migration in SQL Editor:
-   - Copy contents of `supabase/migrations/20260102_initial_schema.sql`
-   - Paste into SQL Editor and run
+2. Apply the schema (see the caveat below)
 3. Enable Auth providers (Email, Google, GitHub) in Authentication settings
+
+> **There is no baseline migration yet.** `supabase/migrations/` holds only
+> incremental changes — no `CREATE TABLE` for `playbooks`, `skills`,
+> `mcp_servers`, `memories`, `api_keys`, `profiles` and friends, and no
+> `ENABLE ROW LEVEL SECURITY` for them. Running the migrations against an empty
+> database fails on the first one.
+>
+> Until a baseline lands, take a schema-only dump from a project that already
+> works — it captures the tables, indexes, triggers and RLS policies together:
+>
+> ```bash
+> supabase db dump --db-url "$CONNECTION_STRING" --schema-only -f baseline.sql
+> ```
+
+### Inspecting the database from an AI editor (optional)
+
+Maintainers can attach the read-only Supabase MCP server, which is how the
+schema gets inspected without pasting credentials around. Create a `.mcp.json`
+in the repo root — it is gitignored, so it stays local:
+
+```json
+{
+  "mcpServers": {
+    "supabase": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@supabase/mcp-server-supabase@0.10.0",
+        "--read-only",
+        "--project-ref=${SUPABASE_PROJECT_REF}"
+      ],
+      "env": { "SUPABASE_ACCESS_TOKEN": "${SUPABASE_ACCESS_TOKEN}" }
+    }
+  }
+}
+```
+
+Then set two variables in your shell — never in a committed file:
+
+- `SUPABASE_PROJECT_REF` — the subdomain of your project URL
+  (`https://<ref>.supabase.co`)
+- `SUPABASE_ACCESS_TOKEN` — a personal access token from
+  [supabase.com/dashboard/account/tokens](https://supabase.com/dashboard/account/tokens)
+
+`--read-only` is deliberate: the token grants account-wide access, so the
+server should not be able to write. Drop the flag only when you actually intend
+to apply a migration through it, and put it back afterwards.
 
 ## Key Concepts
 
