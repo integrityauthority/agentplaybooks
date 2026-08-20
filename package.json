@@ -1,6 +1,6 @@
 {
   "name": "agentplaybooks",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "engines": {
     "node": ">=22.0.0"
@@ -88,6 +88,12 @@
           }
         }
       }
+    },
+    "nanoid": "3.3.18",
+    "undici": "7.29.0",
+    "js-yaml": "4.3.1",
+    "@typescript-eslint/typescript-estree": {
+      "brace-expansion": "5.0.9"
     }
   }
 }
