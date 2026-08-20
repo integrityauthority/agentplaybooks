@@ -2,6 +2,7 @@ import os from "node:os";
 import path from "node:path";
 import readline from "node:readline";
 import { printDoctor, publicReport, runDoctor, runGlobalDoctor } from "./doctor.js";
+import { fetchTemplate, obtainRefreshToken, planConsent } from "./auth-command.js";
 import { applySync, planGlobalSync, planSync, printSyncPlan } from "./sync.js";
 import {
   applyPull,
@@ -51,6 +52,7 @@ Usage:
   agentplaybooks pull <id|guid> [path] [--apply] [--json] [--url=<base>]
   agentplaybooks push [path] [--apply|--yes] [--json] [--url=<base>]
   agentplaybooks push --global [--apply|--yes] [--json] [--include-vendored]
+  agentplaybooks auth <provider> [path] [--client-id=<id>] [--url=<base>]
   agentplaybooks secrets login <guid> [--url=<base>]
   agentplaybooks secrets status [path] [--json] [--url=<base>]
   agentplaybooks secrets push <NAME> [--from-env=<VAR>] [--yes] [--url=<base>]
@@ -77,6 +79,10 @@ Commands:
   playbooks  List the playbooks the stored API key can access.
   pull       Plan or apply downloading a remote playbook's skills into
              .agents/skills and link the project to that playbook.
+  auth       Run the one-time OAuth consent for a user-scoped connection
+             (Gmail, LinkedIn, X, ...) and store the resulting refresh token in
+             the playbook vault. Federation renews it from then on. See which
+             providers need it: curl <url>/api/connections
   push       Plan or apply uploading local skills and the manifest to the
              linked (or a new) remote playbook. Secret values are never sent.
              --global uploads this machine's own skills instead of one project's,
@@ -133,6 +139,30 @@ async function confirm(question) {
     return answer.trim().toLowerCase() === "yes";
   } finally {
     rl.close();
+  }
+}
+
+/**
+ * Hand a URL to the desktop browser.
+ *
+ * Best effort by design: the authorize URL is also printed, so a machine with no
+ * browser — a container, a remote shell — is not a dead end. The caller keeps
+ * waiting on the loopback redirect either way, so the person can open the URL
+ * wherever they like as long as it reaches this host.
+ */
+async function openBrowser(url) {
+  const { spawn } = await import("node:child_process");
+  const [command, args] = process.platform === "win32"
+    ? ["cmd", ["/c", "start", "", url]]
+    : process.platform === "darwin"
+      ? ["open", [url]]
+      : ["xdg-open", [url]];
+  try {
+    const child = spawn(command, args, { stdio: "ignore", detached: true });
+    child.on("error", () => {});
+    child.unref();
+  } catch {
+    // Printed above; nothing else to do.
   }
 }
 
@@ -607,6 +637,54 @@ export async function run(args) {
     const result = await applyPush(root, plan, { apiKey });
     if (!flags.has("--json")) {
       console.log(`Pushed to playbook '${result.name}' (${result.guid}).`);
+    }
+    return;
+  }
+
+  if (command === "auth") {
+    const provider = positional[0];
+    if (!provider) throw new Error("Usage: agentplaybooks auth <provider> [path]");
+    const root = path.resolve(positional[1] ?? process.cwd());
+
+    const template = await fetchTemplate(url, provider);
+    const plan = planConsent(template);
+
+    // The client id identifies an OAuth app the person registered themselves —
+    // the catalogue holds only a placeholder for it, because there is no shared
+    // app to point at. It is not a secret, so a flag or the environment is fine.
+    const clientId = (typeof flags.get("--client-id") === "string" ? flags.get("--client-id") : null)
+      || process.env.AGENTPLAYBOOKS_OAUTH_CLIENT_ID
+      || await promptForKey(`Client ID for your ${template.name} OAuth app: `);
+    if (!clientId) throw new Error("A client ID is required.");
+
+    const { guid, playbookKey } = await resolveVaultAccess(url, root, flags);
+
+    // The client secret is a secret, so it comes from the vault or the
+    // environment — never from a flag, where it would land in shell history and
+    // in process listings.
+    const clientSecret = plan.clientSecretName
+      ? (process.env[plan.clientSecretName] ?? null)
+      : null;
+
+    const refreshToken = await obtainRefreshToken(plan, {
+      clientId,
+      clientSecret,
+      openBrowser,
+      log: (line) => console.log(line),
+    });
+
+    const vaultSecrets = await listVaultSecrets(url, guid, playbookKey);
+    const existing = vaultSecrets.find((secret) => secret.name === plan.refreshSecretName);
+    await createOrRotateSecret(url, guid, playbookKey, {
+      name: plan.refreshSecretName,
+      value: refreshToken,
+      existing,
+      category: "token",
+      description: `${template.name} refresh token (obtained by 'agentplaybooks auth')`,
+    });
+    console.log(`Stored ${plan.refreshSecretName} in the vault of ${guid}. The value was not printed.`);
+    if (plan.clientSecretName && !vaultSecrets.some((s) => s.name === plan.clientSecretName)) {
+      console.log(`Federation also needs ${plan.clientSecretName}. Store it with: agentplaybooks secrets push ${plan.clientSecretName}`);
     }
     return;
   }

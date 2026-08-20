@@ -71,6 +71,17 @@ describe("connection catalogue", () => {
           (template.transport_config.auth?.type ?? "") === "oauth2_refresh_token";
         expect(Boolean(template.requiresConsent)).toBe(usesRefreshToken);
       });
+
+      it("gives a consent flow both endpoints it needs", () => {
+        // token_url says where a token is exchanged, not where consent is
+        // asked. `agentplaybooks auth` cannot run without the second one.
+        if (!template.requiresConsent) {
+          expect(template.authorization_url).toBeUndefined();
+          return;
+        }
+        expect(new URL(template.authorization_url as string).protocol).toBe("https:");
+        expect(new URL(template.transport_config.auth?.token_url as string).protocol).toBe("https:");
+      });
     },
   );
 });
