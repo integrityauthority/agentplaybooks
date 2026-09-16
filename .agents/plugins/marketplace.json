@@ -1,7 +1,7 @@
 {
-  "name": "agentplaybooks-local",
+  "name": "agentplaybooks",
   "interface": {
-    "displayName": "AgentPlaybooks Local Development"
+    "displayName": "AgentPlaybooks"
   },
   "plugins": [
     {

@@ -121,7 +121,7 @@ npm run preview
 npx wrangler deploy
 ```
 
-## CLI and Claude Code Plugin (`packages/cli`)
+## CLI, ChatGPT/Codex Plugin, and Claude Code Plugin (`packages/cli`)
 
 `agentplaybooks doctor <project>` audits local agent configuration
 (instructions, Agent Skills, MCP servers, likely hard-coded secrets, drift)
@@ -139,8 +139,13 @@ only the references the playbook declares in `spec.secrets`. All mutating
 commands are plan-only until `--apply`. See
 [packages/cli/README.md](packages/cli/README.md).
 
-The same package doubles as a Claude Code / Claude Cowork plugin (skill +
-slash commands). Install it from this repository:
+The same package is a ChatGPT/Codex plugin (skill + account MCP) and a Claude
+Code / Claude Cowork plugin (skill + slash commands + account MCP). Both expose
+playbooks, skills, memory, canvas, connected MCP/OpenAPI tools, workflows, and
+the vault-backed API proxy. Exact API-key setup and installation commands are
+in [packages/cli/README.md](packages/cli/README.md).
+
+Install the Claude plugin from this repository:
 
 ```text
 /plugin marketplace add matebenyovszky/agentplaybooks

@@ -115,6 +115,19 @@ use a user API key or a playbook-scoped key through `--key-env`. Configuration
 is always planned first and merged in one update. Only an environment-variable
 reference is written; the credential value is never stored in the agent config.
 
+The account MCP connection is the hosted control plane, not only a playbook
+list. It exposes playbook and persona management plus playbook-scoped tools for
+versioned skills, memory and task graphs, workflow runs, collaborative canvas
+documents, connected MCP/OpenAPI tools, and encrypted secrets. Those scoped
+tools take a `playbook_id`, so one account connection can operate on every
+playbook the key can access.
+
+`use_secret` (GET/HEAD) and `use_secret_write` (POST/PUT/PATCH/DELETE) are the
+zero-exposure API proxy: AgentPlaybooks injects the selected vault secret on the
+server and returns the upstream response without putting the credential in the
+model context. The separate REST proxy also supports streaming responses; the
+plugin-facing MCP tools return a normal MCP result.
+
 ## Secrets
 
 **A plaintext secret value never touches the disk.** Not in the manifest, not in
@@ -185,6 +198,56 @@ the server, which completes the exchange and stores the refresh token. The
 `client_id` comes from the MCP server's `transport_config.auth.client_id` — it is
 public, not a vault secret — and `--client-id=…` overrides it.
 
+## ChatGPT / Codex plugin
+
+The Codex plugin bundles the AgentPlaybooks skill and the account MCP
+connection. Install it from this repository's marketplace:
+
+```powershell
+codex plugin marketplace add matebenyovszky/agentplaybooks
+codex plugin add agentplaybooks@agentplaybooks
+```
+
+The MCP connection deliberately reads the key from
+`AGENTPLAYBOOKS_API_KEY`; the key is never written into the plugin or Codex
+configuration. Set it up as follows:
+
+1. Open <https://agentplaybooks.ai/dashboard/settings> and create a **User API
+   Key**. The default permissions cover playbooks, skills, memory, canvas, and
+   connected tools. Add **Use Secrets** (`secrets:read`) for the API proxy; add
+   **Manage Secrets** (`secrets:write`) only if the agent may store, rotate, or
+   delete secrets. **Full Access** enables current and future capabilities.
+2. Copy the key when it is shown. AgentPlaybooks cannot display it again.
+3. On Windows, run the following in PowerShell. The prompt hides the key and
+   avoids putting it in shell history:
+
+   ```powershell
+   $secureKey = Read-Host -Prompt "Paste the AgentPlaybooks user API key" -AsSecureString
+   $keyPtr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureKey)
+   try {
+     $plainKey = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($keyPtr)
+     [Environment]::SetEnvironmentVariable("AGENTPLAYBOOKS_API_KEY", $plainKey, "User")
+   } finally {
+     if ($keyPtr -ne [IntPtr]::Zero) { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($keyPtr) }
+     Remove-Variable plainKey, secureKey, keyPtr -ErrorAction SilentlyContinue
+   }
+   ```
+
+4. Fully quit and reopen ChatGPT/Codex, then start a **new** chat. Existing app
+   processes and chats do not inherit a newly created environment variable.
+
+For a terminal-only session on macOS or Linux, keep the key out of history and
+launch Codex from the same shell:
+
+```bash
+read -rsp "AgentPlaybooks user API key: " AGENTPLAYBOOKS_API_KEY; echo
+export AGENTPLAYBOOKS_API_KEY
+codex
+```
+
+`apb login` is intentionally separate: it stores a credential for CLI
+`pull`/`push`, but the bundled MCP server reads the environment variable above.
+
 ## Claude Code / Claude Cowork plugin
 
 This package doubles as a Claude Code plugin: it ships an `agentplaybooks`
@@ -195,6 +258,14 @@ that drive this CLI. Install from the repository root marketplace:
 /plugin marketplace add matebenyovszky/agentplaybooks
 /plugin install agentplaybooks@agentplaybooks
 ```
+
+The Claude plugin now bundles the same account MCP connection. During install,
+Claude asks for the AgentPlaybooks User API Key and stores it as a sensitive
+plugin option in the operating system keychain (or Claude's credential store
+when no keychain is available). Create the key under **Dashboard > Settings >
+User API Keys** with the permissions described above. Run `/reload-plugins`
+after install or update, then `/mcp` to verify that
+`agentplaybooks-account` is connected.
 
 The skill also works standalone: copy `skills/agentplaybooks/` into a
 project's `.claude/skills/` (or let `sync` do it once it is part of a

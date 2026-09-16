@@ -1,7 +1,7 @@
 {
   "name": "agentplaybooks",
-  "description": "Portable agent playbooks: audit, sync, pull, push, and connect account or playbook MCP access across AI agents.",
-  "version": "0.3.0-beta.1+codex.20260904174125",
+  "description": "Portable, vendor-neutral agents: sync configuration and manage skills, tools, memory, canvas, and secrets.",
+  "version": "0.3.0-beta.2+codex.20260916043050",
   "author": {
     "name": "AgentPlaybooks",
     "url": "https://agentplaybooks.ai"
@@ -22,15 +22,13 @@
     "agentplaybooks-account": {
       "type": "http",
       "url": "https://agentplaybooks.ai/api/mcp/manage",
-      "headers": {
-        "X-API-Key": "${AGENTPLAYBOOKS_API_KEY}"
-      }
+      "bearer_token_env_var": "AGENTPLAYBOOKS_API_KEY"
     }
   },
   "interface": {
     "displayName": "AgentPlaybooks",
-    "shortDescription": "Portable agent configuration and account MCP access",
-    "longDescription": "Audit, synchronize, share, and connect portable playbooks across Codex, Claude, Cursor, Hermes Agent, and other AI clients.",
+    "shortDescription": "Portable agents, connected tools, and secret proxy",
+    "longDescription": "Keep agents vendor-neutral across Codex, Claude, Cursor, Hermes, and other clients. Audit and sync local configuration, then manage playbooks, skills, memory, canvas, federated MCP/OpenAPI tools, workflows, and vault-backed API calls through one account connection.",
     "developerName": "AgentPlaybooks",
     "category": "Productivity",
     "capabilities": [
@@ -41,9 +39,9 @@
     "privacyPolicyURL": "https://agentplaybooks.ai/privacy",
     "termsOfServiceURL": "https://agentplaybooks.ai/terms",
     "defaultPrompt": [
-      "Check my agent configuration for drift.",
-      "Connect my AgentPlaybooks account.",
-      "Sync this project to Hermes Agent."
+      "Audit and synchronize my agent configuration.",
+      "Show my playbooks and their connected tools.",
+      "Call an API with a vault secret without revealing it."
     ],
     "brandColor": "#7C3AED"
   }

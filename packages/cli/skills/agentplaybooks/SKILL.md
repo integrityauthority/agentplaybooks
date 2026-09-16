@@ -82,6 +82,17 @@ Substitute your variant for `apb` in the commands below.
   `apb connect --account --target=<type>`, show the plan, then run it with
   `--apply`. The generated config contains `${AGENTPLAYBOOKS_API_KEY}`, never
   the key. Set that variable before starting or restarting the agent.
+- **"Work with my hosted playbooks"** → use the bundled
+  `agentplaybooks-account` MCP connection. Start with `list_playbooks`, then
+  pass the selected `playbook_id` to playbook-scoped tools. The connection
+  covers versioned skills, memory and task graphs, workflow runs, collaborative
+  canvas documents, MCP/OpenAPI tools, and encrypted secrets; do not imply it
+  is only a sync or listing API.
+- **"Call an API without revealing its key"** → use `list_secrets` to discover
+  names, then `use_secret` for GET/HEAD. Use `use_secret_write` for
+  POST/PUT/PATCH/DELETE only after the user approves the external mutation.
+  Both inject the credential server-side and must never reveal or request its
+  value. The account MCP form also needs the target `playbook_id`.
 - **"Connect these playbooks only"** → pass a comma-separated GUID list to
   `apb connect`. The CLI creates a separate, stable MCP entry for each and
   merges them into the target configuration atomically.
@@ -109,6 +120,13 @@ Substitute your variant for `apb` in the commands below.
   environment over pasting keys into the terminal. `push` refuses to upload
   content that looks like it contains hard-coded credentials — fix the finding
   instead of working around it.
+- If the bundled Codex MCP connection reports an authentication error, direct
+  the user to **AgentPlaybooks Dashboard > Settings > User API Keys**, then have
+  them set `AGENTPLAYBOOKS_API_KEY` in the environment that launches Codex and
+  fully restart it. `apb login` alone does not configure the bundled MCP
+  connection. The proxy additionally requires `secrets:read`; secret creation,
+  rotation, and deletion require `secrets:write`. Never ask the user to paste
+  the key into chat.
 - `apb secrets status` is safe to run. **Do not run `apb secrets push` for the
   user**: storing a credential is theirs to confirm, and the command needs a
   value on stdin that you must never hold or generate. Tell them the exact
