@@ -208,33 +208,45 @@ codex plugin marketplace add matebenyovszky/agentplaybooks
 codex plugin add agentplaybooks@agentplaybooks
 ```
 
-The MCP connection deliberately reads the key from
-`AGENTPLAYBOOKS_API_KEY`; the key is never written into the plugin or Codex
-configuration. Set it up as follows:
+The bundled remote MCP uses OAuth 2.1 with PKCE. Codex/ChatGPT opens
+AgentPlaybooks in the browser, asks you to sign in, shows the requested access,
+and stores its own refreshable connection. No API key needs to be copied into
+the plugin. In a terminal, start or repair that flow with:
 
-1. Open <https://agentplaybooks.ai/dashboard/settings> and create a **User API
-   Key**. The default permissions cover playbooks, skills, memory, canvas, and
-   connected tools. Add **Use Secrets** (`secrets:read`) for the API proxy; add
-   **Manage Secrets** (`secrets:write`) only if the agent may store, rotate, or
-   delete secrets. **Full Access** enables current and future capabilities.
-2. Copy the key when it is shown. AgentPlaybooks cannot display it again.
-3. On Windows, run the following in PowerShell. The prompt hides the key and
-   avoids putting it in shell history:
+```powershell
+codex mcp login agentplaybooks-account
+```
 
-   ```powershell
-   $secureKey = Read-Host -Prompt "Paste the AgentPlaybooks user API key" -AsSecureString
-   $keyPtr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureKey)
-   try {
-     $plainKey = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($keyPtr)
-     [Environment]::SetEnvironmentVariable("AGENTPLAYBOOKS_API_KEY", $plainKey, "User")
-   } finally {
-     if ($keyPtr -ne [IntPtr]::Zero) { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($keyPtr) }
-     Remove-Variable plainKey, secureKey, keyPtr -ErrorAction SilentlyContinue
-   }
-   ```
+API keys remain available for CI, headless systems, and clients without OAuth.
+Create a **User API Key** at
+<https://agentplaybooks.ai/dashboard/settings>, then put only the environment
+variable name in Codex configuration — never the key itself:
 
-4. Fully quit and reopen ChatGPT/Codex, then start a **new** chat. Existing app
-   processes and chats do not inherit a newly created environment variable.
+```toml
+# %USERPROFILE%\.codex\config.toml on Windows
+# ~/.codex/config.toml on macOS/Linux
+[mcp_servers.agentplaybooks-account]
+url = "https://agentplaybooks.ai/api/mcp/manage"
+bearer_token_env_var = "AGENTPLAYBOOKS_API_KEY"
+```
+
+Set the referenced environment variable. On Windows, this prompt hides the key
+and avoids putting it in shell history:
+
+```powershell
+$secureKey = Read-Host -Prompt "Paste the AgentPlaybooks user API key" -AsSecureString
+$keyPtr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureKey)
+try {
+  $plainKey = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($keyPtr)
+  [Environment]::SetEnvironmentVariable("AGENTPLAYBOOKS_API_KEY", $plainKey, "User")
+} finally {
+  if ($keyPtr -ne [IntPtr]::Zero) { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($keyPtr) }
+  Remove-Variable plainKey, secureKey, keyPtr -ErrorAction SilentlyContinue
+}
+```
+
+Fully quit and reopen ChatGPT/Codex after changing the environment variable,
+then start a **new** chat. Existing processes and chats do not inherit it.
 
 For a terminal-only session on macOS or Linux, keep the key out of history and
 launch Codex from the same shell:
@@ -245,8 +257,8 @@ export AGENTPLAYBOOKS_API_KEY
 codex
 ```
 
-`apb login` is intentionally separate: it stores a credential for CLI
-`pull`/`push`, but the bundled MCP server reads the environment variable above.
+`apb login` is intentionally separate: it stores an API key for CLI
+`pull`/`push`; it neither creates nor replaces the Codex OAuth connection.
 
 ## Claude Code / Claude Cowork plugin
 
@@ -259,13 +271,9 @@ that drive this CLI. Install from the repository root marketplace:
 /plugin install agentplaybooks@agentplaybooks
 ```
 
-The Claude plugin now bundles the same account MCP connection. During install,
-Claude asks for the AgentPlaybooks User API Key and stores it as a sensitive
-plugin option in the operating system keychain (or Claude's credential store
-when no keychain is available). Create the key under **Dashboard > Settings >
-User API Keys** with the permissions described above. Run `/reload-plugins`
-after install or update, then `/mcp` to verify that
-`agentplaybooks-account` is connected.
+The bundled account MCP also uses interactive OAuth discovery. Open `/mcp` if
+Claude does not immediately offer to authenticate the new connection. A manual
+API-key header remains a fallback for non-interactive environments.
 
 The skill also works standalone: copy `skills/agentplaybooks/` into a
 project's `.claude/skills/` (or let `sync` do it once it is part of a

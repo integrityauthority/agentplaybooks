@@ -101,7 +101,7 @@ describe("how a private playbook refuses", () => {
 
     expect(refusal.status).toBe(401);
     expect(refusal.message).toContain("X-API-Key");
-    expect(refusal.headers["WWW-Authenticate"]).toBeUndefined();
+    expect(refusal.headers["WWW-Authenticate"]).toContain("resource_metadata=");
   });
 
   it("blames the permission only when a real key was presented", () => {

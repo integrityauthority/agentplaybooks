@@ -120,13 +120,13 @@ Substitute your variant for `apb` in the commands below.
   environment over pasting keys into the terminal. `push` refuses to upload
   content that looks like it contains hard-coded credentials — fix the finding
   instead of working around it.
-- If the bundled Codex MCP connection reports an authentication error, direct
-  the user to **AgentPlaybooks Dashboard > Settings > User API Keys**, then have
-  them set `AGENTPLAYBOOKS_API_KEY` in the environment that launches Codex and
-  fully restart it. `apb login` alone does not configure the bundled MCP
-  connection. The proxy additionally requires `secrets:read`; secret creation,
-  rotation, and deletion require `secrets:write`. Never ask the user to paste
-  the key into chat.
+- If the bundled Codex MCP connection reports an authentication error, run
+  `codex mcp login agentplaybooks-account` to start the browser OAuth flow.
+  `apb login` alone does not configure the bundled MCP connection. For
+  headless/CI use only, put `bearer_token_env_var =
+  "AGENTPLAYBOOKS_API_KEY"` under `[mcp_servers.agentplaybooks-account]` in
+  Codex configuration and fully restart it. Never ask the user to paste the key
+  into chat.
 - `apb secrets status` is safe to run. **Do not run `apb secrets push` for the
   user**: storing a credential is theirs to confirm, and the command needs a
   value on stdin that you must never hold or generate. Tell them the exact

@@ -1,12 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GET, POST } from "@/app/api/mcp/manage/route";
-import { validateUserApiKey } from "@/app/api/_shared/auth";
+import { getAuthenticatedUser, validateUserApiKey } from "@/app/api/_shared/auth";
 
 vi.mock("@/app/api/_shared/auth", () => ({
+  getAuthenticatedUser: vi.fn(),
   validateUserApiKey: vi.fn(),
 }));
 
 const mockValidateUserApiKey = vi.mocked(validateUserApiKey);
+const mockGetAuthenticatedUser = vi.mocked(getAuthenticatedUser);
 
 const authenticatedUserKey = {
   id: "user-key-id",
@@ -32,6 +34,7 @@ function mcpRequest(body: Record<string, unknown>, headers: Record<string, strin
 describe("AgentPlaybooks management MCP transport", () => {
   beforeEach(() => {
     mockValidateUserApiKey.mockResolvedValue(authenticatedUserKey);
+    mockGetAuthenticatedUser.mockResolvedValue(null);
   });
 
   it("rejects unauthenticated keepalive requests", async () => {
@@ -40,7 +43,9 @@ describe("AgentPlaybooks management MCP transport", () => {
     const response = await POST(mcpRequest({ id: 0, method: "ping" }));
 
     expect(response.status).toBe(401);
-    expect(response.headers.get("Retry-After")).toBe("60");
+    expect(response.headers.get("WWW-Authenticate")).toContain(
+      "/.well-known/oauth-protected-resource/api/mcp/manage",
+    );
     expect(await response.json()).toMatchObject({
       id: null,
       error: { code: -32001 },
@@ -57,7 +62,7 @@ describe("AgentPlaybooks management MCP transport", () => {
     }));
 
     expect(response.status).toBe(401);
-    expect(response.headers.get("Retry-After")).toBe("60");
+    expect(response.headers.get("WWW-Authenticate")).toContain("resource_metadata=");
   });
 
   it("does not build the management manifest without a user key", async () => {
@@ -68,7 +73,20 @@ describe("AgentPlaybooks management MCP transport", () => {
     }));
 
     expect(response.status).toBe(401);
-    expect(response.headers.get("Retry-After")).toBe("60");
+    expect(response.headers.get("WWW-Authenticate")).toContain("resource_metadata=");
+  });
+
+  it("accepts a Supabase OAuth access token as the signed-in account", async () => {
+    mockValidateUserApiKey.mockResolvedValueOnce(null);
+    mockGetAuthenticatedUser.mockResolvedValueOnce({ id: "oauth-user" });
+
+    const response = await GET(new Request("http://localhost/api/mcp/manage", {
+      headers: { Authorization: "Bearer oauth-access-token" },
+    }));
+    const manifest = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(manifest._auth).toMatchObject({ type: "oauth2", actor: "oauth" });
   });
 
   it("negotiates the current protocol version", async () => {

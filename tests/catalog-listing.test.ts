@@ -95,7 +95,7 @@ describe("Cursor plugin catalog manifests", () => {
 
     expect(cursor.name).toBe("agentplaybooks");
     expect(cursor.name).toBe(claude.name);
-    expect(cursor.version).toBe("0.3.0-beta.2");
+    expect(cursor.version).toBe("0.3.0-beta.3");
     expect(cursor.version).toBe(claude.version);
     expect(cursor.license).toBe("MIT");
     expect(cursor.description).toBe(claude.description);
@@ -115,7 +115,7 @@ describe("Cursor plugin catalog manifests", () => {
 
   it("publishes the fixed CLI package version", () => {
     const cli = JSON.parse(source("packages/cli/package.json")) as { version: string };
-    expect(cli.version).toBe("0.3.0-beta.2");
+    expect(cli.version).toBe("0.3.0-beta.3");
   });
 });
 

@@ -1,7 +1,7 @@
 {
   "name": "agentplaybooks",
   "description": "Portable, vendor-neutral agents: sync configuration and manage skills, tools, memory, canvas, and secrets.",
-  "version": "0.3.0-beta.2+codex.20260916043050",
+  "version": "0.3.0-beta.3+codex.20260918042558",
   "author": {
     "name": "AgentPlaybooks",
     "url": "https://agentplaybooks.ai"
@@ -21,8 +21,7 @@
   "mcpServers": {
     "agentplaybooks-account": {
       "type": "http",
-      "url": "https://agentplaybooks.ai/api/mcp/manage",
-      "bearer_token_env_var": "AGENTPLAYBOOKS_API_KEY"
+      "url": "https://agentplaybooks.ai/api/mcp/manage"
     }
   },
   "interface": {

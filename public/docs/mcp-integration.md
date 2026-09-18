@@ -14,6 +14,12 @@ control plane that can create a playbook and immediately apply it.
 | User control plane | `https://agentplaybooks.ai/api/mcp/manage` | Required `playbook_id` tool argument |
 | Direct playbook | `https://agentplaybooks.ai/api/mcp/YOUR_GUID` | Bound in the URL |
 
+OAuth 2.1 with PKCE is the default for interactive clients. The endpoint
+publishes protected-resource metadata, discovers the AgentPlaybooks
+authorization server, and shows a consent screen before account access is
+granted. User and playbook API keys remain supported for headless automation
+and clients without OAuth.
+
 Both scopes project the same canonical playbook operations. The user control
 plane is the endpoint published to registries such as Glama because it supports
 the full account-to-playbook lifecycle in one connection.

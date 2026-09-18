@@ -190,7 +190,9 @@ describe("GET /api/mcp/:guid — public manifest", () => {
     // This used to be 404, which told a client the server did not exist and
     // made a private playbook impossible to add as a connector.
     expect(res.status).toBe(401);
-    expect(res.headers.get("WWW-Authenticate")).toBeNull();
+    expect(res.headers.get("WWW-Authenticate")).toContain(
+      "/.well-known/oauth-protected-resource/api/mcp/private-guid",
+    );
     // A private playbook is a normal miss for the public query. single()
     // turns that into a noisy PostgREST 406 before the authenticated fallback;
     // maybeSingle() keeps the fallback while recording the expected miss as 200.

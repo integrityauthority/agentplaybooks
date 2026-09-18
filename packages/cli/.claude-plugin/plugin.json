@@ -1,7 +1,7 @@
 {
   "name": "agentplaybooks",
   "description": "Portable, vendor-neutral agents: sync configuration and manage skills, tools, memory, canvas, and secrets.",
-  "version": "0.3.0-beta.2",
+  "version": "0.3.0-beta.3",
   "author": {
     "name": "AgentPlaybooks",
     "url": "https://agentplaybooks.ai"
@@ -10,22 +10,10 @@
   "repository": "https://github.com/matebenyovszky/agentplaybooks",
   "license": "MIT",
   "keywords": ["playbooks", "skills", "mcp", "audit", "sync", "portability"],
-  "userConfig": {
-    "agentplaybooks_api_key": {
-      "type": "string",
-      "title": "AgentPlaybooks user API key",
-      "description": "Create this in AgentPlaybooks Dashboard > Settings > User API Keys. Include Use Secrets to enable the API proxy.",
-      "sensitive": true,
-      "required": true
-    }
-  },
   "mcpServers": {
     "agentplaybooks-account": {
       "type": "http",
-      "url": "https://agentplaybooks.ai/api/mcp/manage",
-      "headers": {
-        "Authorization": "Bearer ${user_config.agentplaybooks_api_key}"
-      }
+      "url": "https://agentplaybooks.ai/api/mcp/manage"
     }
   }
 }

@@ -10,7 +10,10 @@ AgentPlaybooks provides protocol projections over one shared operation model:
 2. **User MCP control plane** - Account lifecycle plus every playbook operation
 3. **Direct playbook MCP** - The same playbook operations with identity in the URL
 
-Both methods require a **User API Key** for authentication.
+Interactive clients can authenticate with **OAuth 2.1 + PKCE**. **User API
+Keys** remain available for automation, CI, and clients that do not support
+OAuth. Both credentials resolve to the same AgentPlaybooks account and the
+same authorization boundaries.
 
 ---
 
@@ -89,7 +92,14 @@ https://apbks.com/api/manage
 
 ### Authentication
 
-Include the User API Key in the Authorization header:
+Interactive clients may send the Supabase OAuth access token obtained through
+the AgentPlaybooks authorization flow:
+
+```http
+Authorization: Bearer <oauth_access_token>
+```
+
+For headless automation, include a User API Key instead:
 
 ```http
 Authorization: Bearer apb_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
@@ -244,15 +254,35 @@ curl -X PUT https://apbks.com/api/manage/playbooks/$PLAYBOOK_ID \
 
 ## MCP Server
 
-The Management MCP Server allows AI agents using the Model Context Protocol to manage playbooks directly.
+The Management MCP Server allows AI agents using the Model Context Protocol to manage playbooks directly. OAuth 2.1 with PKCE is the default for interactive clients; User API Keys remain supported for automation and CI.
 
 ### Server URL
 
 ```
-https://apbks.com/api/mcp/manage
+https://agentplaybooks.ai/api/mcp/manage
 ```
 
 ### Configuration
+
+#### For Codex / ChatGPT
+
+The AgentPlaybooks Codex plugin already includes the server URL. Codex discovers
+OAuth automatically and opens the browser consent flow. From the CLI, the same
+flow can be started explicitly:
+
+```powershell
+codex mcp login agentplaybooks-account
+```
+
+No key is required for this mode. For a headless/CI setup, create a User API Key
+in Dashboard → Settings and reference it from `%USERPROFILE%\.codex\config.toml`
+(Windows) or `~/.codex/config.toml` (macOS/Linux):
+
+```toml
+[mcp_servers.agentplaybooks-account]
+url = "https://agentplaybooks.ai/api/mcp/manage"
+bearer_token_env_var = "AGENTPLAYBOOKS_API_KEY"
+```
 
 #### For Claude Desktop
 
@@ -262,7 +292,7 @@ Add to your `claude_desktop_config.json`:
 {
   "mcpServers": {
     "agentplaybooks-manage": {
-      "url": "https://apbks.com/api/mcp/manage",
+      "url": "https://agentplaybooks.ai/api/mcp/manage",
       "transport": "http",
       "headers": {
         "Authorization": "Bearer apb_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
@@ -280,7 +310,7 @@ Add to your MCP settings:
 {
   "mcpServers": {
     "agentplaybooks-manage": {
-      "url": "https://apbks.com/api/mcp/manage",
+      "url": "https://agentplaybooks.ai/api/mcp/manage",
       "headers": {
         "Authorization": "Bearer $AGENTPLAYBOOKS_API_KEY"
       }
