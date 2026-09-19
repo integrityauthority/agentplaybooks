@@ -1,10 +1,33 @@
 // Auto-generated types will be here
 // For now, define manually based on our schema
 
+/** MCP tool annotation hints introspected by clients and Glama TDQS. */
+export type McpToolAnnotations = {
+  title?: string;
+  readOnlyHint?: boolean;
+  destructiveHint?: boolean;
+  idempotentHint?: boolean;
+  openWorldHint?: boolean;
+};
+
 export type McpTool = {
   name: string;
+  /**
+   * Human-readable label, shown wherever a client lists tools for a person
+   * rather than for a model. The MCP spec has clients prefer `title`, fall back
+   * to `annotations.title`, then to `name` — so setting this one field covers
+   * every client that knows about titles at all, and older ones keep showing
+   * `name` exactly as before.
+   *
+   * The Claude Connectors Directory requires it: a tool without a title is
+   * flagged in the submission portal and has to be fixed on the server before
+   * the connector can be submitted.
+   */
+  title?: string;
   description?: string;
   inputSchema?: Record<string, unknown>;
+  outputSchema?: Record<string, unknown>;
+  annotations?: McpToolAnnotations;
 };
 
 export type McpResource = {
@@ -197,6 +220,8 @@ export type MemoriesRow = {
   description: string | null;
   updated_at: string;
   // RLM (Recursive Language Model) fields for hierarchical memory
+  memory_at: string;
+  is_archived: boolean;
   tier: MemoryTier;                    // Memory hierarchy level
   parent_key: string | null;           // For hierarchical organization
   priority: number;                    // Importance (1-100)

@@ -1,7 +1,7 @@
 # AgentPlaybooks CLI
 
 Local-first CLI for auditing, synchronizing, and sharing portable agent
-configuration. Zero runtime dependencies, Node.js >= 20.
+configuration. The published/plugin CLI is self-contained, Node.js >= 20.
 
 ```bash
 node ./bin/agentplaybooks.js doctor ../my-project
@@ -96,6 +96,38 @@ node ./bin/agentplaybooks.js push --apply           # local -> remote playbook
 - `pull` and `push` are plan-only unless `--apply` is supplied. Use
   `--url=<base>` or `AGENTPLAYBOOKS_URL` for self-hosted deployments.
 
+## Connect account or playbooks as MCP
+
+```bash
+# Every playbook the user key can access
+export AGENTPLAYBOOKS_API_KEY=<your-user-api-key>
+apb connect --account --target=hermes
+apb connect --account --target=hermes --apply
+
+# One or more selected playbooks
+apb connect 011d8a7fa0ec4016,111d8a7fa0ec4016 --target=claude
+apb connect 011d8a7fa0ec4016,111d8a7fa0ec4016 --target=claude --apply
+```
+
+`--account` points to `/api/mcp/manage` and uses
+`${AGENTPLAYBOOKS_API_KEY}`. Selected GUIDs become separate MCP entries and may
+use a user API key or a playbook-scoped key through `--key-env`. Configuration
+is always planned first and merged in one update. Only an environment-variable
+reference is written; the credential value is never stored in the agent config.
+
+The account MCP connection is the hosted control plane, not only a playbook
+list. It exposes playbook and persona management plus playbook-scoped tools for
+versioned skills, memory and task graphs, workflow runs, collaborative canvas
+documents, connected MCP/OpenAPI tools, and encrypted secrets. Those scoped
+tools take a `playbook_id`, so one account connection can operate on every
+playbook the key can access.
+
+`use_secret` (GET/HEAD) and `use_secret_write` (POST/PUT/PATCH/DELETE) are the
+zero-exposure API proxy: AgentPlaybooks injects the selected vault secret on the
+server and returns the upstream response without putting the credential in the
+model context. The separate REST proxy also supports streaming responses; the
+plugin-facing MCP tools return a normal MCP result.
+
 ## Secrets
 
 **A plaintext secret value never touches the disk.** Not in the manifest, not in
@@ -147,16 +179,101 @@ Line endings are normalized (CRLF is treated as LF) everywhere digests and
 content comparisons happen, so a Windows checkout and a macOS checkout of the
 same skill are recognized as identical instead of drifting.
 
+## Which playbook, and OAuth providers
+
+The working directory decides which playbook a command works on:
+`pull --apply` and `push` write `.agentplaybooks/remote.json`, and everything
+that talks to a playbook reads the guid from there. `--playbook=<guid>`
+overrides it. The credential is separate — `AGENTPLAYBOOKS_PLAYBOOK_KEY`, or the
+playbook-scoped key `secrets login` stored for that server and guid.
+
+```bash
+apb secrets push GOOGLE_CLIENT_SECRET
+apb auth gmail
+```
+
+`auth` obtains the first refresh token for a connection that needs consent. It
+runs authorization code + PKCE against a loopback redirect and hands the code to
+the server, which completes the exchange and stores the refresh token. The
+`client_id` comes from the MCP server's `transport_config.auth.client_id` — it is
+public, not a vault secret — and `--client-id=…` overrides it.
+
+## ChatGPT / Codex plugin
+
+The Codex plugin bundles the AgentPlaybooks skill and the account MCP
+connection. Install it from this repository's marketplace:
+
+```powershell
+codex plugin marketplace add matebenyovszky/agentplaybooks
+codex plugin add agentplaybooks@agentplaybooks
+```
+
+The bundled remote MCP uses OAuth 2.1 with PKCE. Codex/ChatGPT opens
+AgentPlaybooks in the browser, asks you to sign in, shows the requested access,
+and stores its own refreshable connection. No API key needs to be copied into
+the plugin. In a terminal, start or repair that flow with:
+
+```powershell
+codex mcp login agentplaybooks-account
+```
+
+API keys remain available for CI, headless systems, and clients without OAuth.
+Create a **User API Key** at
+<https://agentplaybooks.ai/dashboard/settings>, then put only the environment
+variable name in Codex configuration — never the key itself:
+
+```toml
+# %USERPROFILE%\.codex\config.toml on Windows
+# ~/.codex/config.toml on macOS/Linux
+[mcp_servers.agentplaybooks-account]
+url = "https://agentplaybooks.ai/api/mcp/manage"
+bearer_token_env_var = "AGENTPLAYBOOKS_API_KEY"
+```
+
+Set the referenced environment variable. On Windows, this prompt hides the key
+and avoids putting it in shell history:
+
+```powershell
+$secureKey = Read-Host -Prompt "Paste the AgentPlaybooks user API key" -AsSecureString
+$keyPtr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureKey)
+try {
+  $plainKey = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($keyPtr)
+  [Environment]::SetEnvironmentVariable("AGENTPLAYBOOKS_API_KEY", $plainKey, "User")
+} finally {
+  if ($keyPtr -ne [IntPtr]::Zero) { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($keyPtr) }
+  Remove-Variable plainKey, secureKey, keyPtr -ErrorAction SilentlyContinue
+}
+```
+
+Fully quit and reopen ChatGPT/Codex after changing the environment variable,
+then start a **new** chat. Existing processes and chats do not inherit it.
+
+For a terminal-only session on macOS or Linux, keep the key out of history and
+launch Codex from the same shell:
+
+```bash
+read -rsp "AgentPlaybooks user API key: " AGENTPLAYBOOKS_API_KEY; echo
+export AGENTPLAYBOOKS_API_KEY
+codex
+```
+
+`apb login` is intentionally separate: it stores an API key for CLI
+`pull`/`push`; it neither creates nor replaces the Codex OAuth connection.
+
 ## Claude Code / Claude Cowork plugin
 
 This package doubles as a Claude Code plugin: it ships an `agentplaybooks`
-skill plus `/agentplaybooks:doctor`, `:sync`, `:pull`, and `:push` commands
+skill plus `/agentplaybooks:doctor`, `:sync`, `:login`, `:connect`, `:pull`, and `:push` commands
 that drive this CLI. Install from the repository root marketplace:
 
 ```text
 /plugin marketplace add matebenyovszky/agentplaybooks
 /plugin install agentplaybooks@agentplaybooks
 ```
+
+The bundled account MCP also uses interactive OAuth discovery. Open `/mcp` if
+Claude does not immediately offer to authenticate the new connection. A manual
+API-key header remains a fallback for non-interactive environments.
 
 The skill also works standalone: copy `skills/agentplaybooks/` into a
 project's `.claude/skills/` (or let `sync` do it once it is part of a

@@ -1,3 +1,6 @@
+import { credentialProblem, presentedApiKey } from "./api-key-header";
+import { oauthBearerChallenge } from "@/lib/mcp-oauth";
+
 /**
  * Transport-level rules shared by every MCP endpoint in this app.
  *
@@ -107,15 +110,21 @@ export function isHandshakeMethod(method: unknown): boolean {
  * is 64 bits of the caller's own knowledge and the alternative breaks every
  * connector flow for private playbooks.
  *
- * No `WWW-Authenticate` is sent, and that is deliberate. A `Bearer` challenge is
- * how the MCP authorization spec announces an OAuth protected resource, so an
- * OAuth-capable client reads it as "start an OAuth flow" — Claude's connector
- * switched from "API key" to "Always required" and then failed, because there is
- * no OAuth metadata endpoint here and never was. The 401 alone carries what we
- * mean: the endpoint exists and needs a credential the operator configures.
+ * A standards-compliant Bearer challenge now points OAuth-capable clients at the
+ * protected-resource metadata for this exact endpoint. API keys remain valid for
+ * clients and CI environments that do not support interactive OAuth.
  *
  * A credential that was presented and rejected gets 403 instead, naming the
  * permission it lacks: with 401 the client would keep retrying the same key.
+ *
+ * But "presented" is not one case, it is three, and telling them apart is the
+ * whole value of the message. A client's log showed
+ * `200 → 202 → 403 "needs the memory:read permission"`, and the permission was
+ * never the problem: its config had written `Authorization: apb_…` with no
+ * `Bearer` scheme, so the key arrived and went unrecognised. Sending an operator
+ * to edit permissions that are already correct is worse than saying nothing,
+ * because from the client side every one of these looks identical — an empty
+ * listing and a failing refresh.
  */
 
 export function privateAccessRefusal(request: Request): {
@@ -123,8 +132,15 @@ export function privateAccessRefusal(request: Request): {
   message: string;
   headers: Record<string, string>;
 } {
-  const presented = Boolean(request.headers.get("Authorization"));
-  return presented
+  // A credential arrived but is not usable — wrong shape, or a placeholder the
+  // client never expanded. Still 403: something was sent, so 401 would only
+  // invite the same value again.
+  const problem = credentialProblem(request);
+  if (problem) {
+    return { status: 403, message: problem.message, headers: {} };
+  }
+
+  return presentedApiKey(request)
     ? {
       status: 403,
       message: "That credential cannot read this playbook. A playbook API key needs the memory:read permission; a user API key needs playbooks:read and access to the playbook.",
@@ -132,7 +148,7 @@ export function privateAccessRefusal(request: Request): {
     }
     : {
       status: 401,
-      message: "This playbook is private. Send an API key as `Authorization: Bearer <key>`.",
-      headers: {},
+      message: "This playbook is private. Connect with OAuth, send an API key as `Authorization: Bearer <key>`, or use `X-API-Key: <key>` if this client reserves Authorization for itself.",
+      headers: { "WWW-Authenticate": oauthBearerChallenge(request.url) },
     };
 }

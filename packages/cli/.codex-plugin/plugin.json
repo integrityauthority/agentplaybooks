@@ -1,0 +1,47 @@
+{
+  "name": "agentplaybooks",
+  "description": "Portable, vendor-neutral agents: sync configuration and manage skills, tools, memory, canvas, and secrets.",
+  "version": "0.3.0-beta.3+codex.20260918042558",
+  "author": {
+    "name": "AgentPlaybooks",
+    "url": "https://agentplaybooks.ai"
+  },
+  "homepage": "https://agentplaybooks.ai",
+  "repository": "https://github.com/matebenyovszky/agentplaybooks",
+  "license": "MIT",
+  "keywords": [
+    "playbooks",
+    "skills",
+    "mcp",
+    "audit",
+    "sync",
+    "portability"
+  ],
+  "skills": "./skills/",
+  "mcpServers": {
+    "agentplaybooks-account": {
+      "type": "http",
+      "url": "https://agentplaybooks.ai/api/mcp/manage"
+    }
+  },
+  "interface": {
+    "displayName": "AgentPlaybooks",
+    "shortDescription": "Portable agents, connected tools, and secret proxy",
+    "longDescription": "Keep agents vendor-neutral across Codex, Claude, Cursor, Hermes, and other clients. Audit and sync local configuration, then manage playbooks, skills, memory, canvas, federated MCP/OpenAPI tools, workflows, and vault-backed API calls through one account connection.",
+    "developerName": "AgentPlaybooks",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "websiteURL": "https://agentplaybooks.ai",
+    "privacyPolicyURL": "https://agentplaybooks.ai/privacy",
+    "termsOfServiceURL": "https://agentplaybooks.ai/terms",
+    "defaultPrompt": [
+      "Audit and synchronize my agent configuration.",
+      "Show my playbooks and their connected tools.",
+      "Call an API with a vault secret without revealing it."
+    ],
+    "brandColor": "#7C3AED"
+  }
+}

@@ -4,12 +4,14 @@ import { getAuthenticatedUser, validateApiKey } from "@/app/api/_shared/auth";
 import { getPlaybookByGuid } from "@/app/api/_shared/guards";
 import { encryptSecret, decryptSecret } from "@/lib/crypto";
 import { checkSecretDestination, normalizeAllowedHosts } from "@/lib/secret-destinations";
+import { secretProxyStream, type ProxyStreamOutcome } from "@/lib/secret-proxy-stream";
 import {
   buildExchangeBody,
   isLoopbackRedirect,
   isPlanFailure,
   planExchange,
   readExchangeResponse,
+  resolveConfiguredClientId,
 } from "@/lib/oauth-exchange";
 import {
   destinationHostOf,
@@ -43,7 +45,7 @@ function auditContext(
 // Secrets responses must never be cached by browsers/CDNs.
 app.use("*", async (c, next) => {
   await next();
-  c.header("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  c.header("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, no-transform");
   c.header("Pragma", "no-cache");
   c.header("Expires", "0");
 });
@@ -519,11 +521,24 @@ app.post("/proxy", async (c) => {
     return c.json({ error: "Forbidden" }, 403);
   }
 
-  const body = await c.req.json();
-  const { secret_name, url, method, header_name, header_prefix, body: reqBody, extra_headers, timeout_ms } = body;
+  const body = await c.req.json().catch(() => null);
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return c.json({ error: "A JSON object is required" }, 400);
+  }
+  const { secret_name, url, method, header_name, header_prefix, body: reqBody, extra_headers, timeout_ms, response_mode } = body;
 
-  if (!secret_name || !url) {
+  if (typeof secret_name !== "string" || !secret_name || typeof url !== "string" || !url) {
     return c.json({ error: "secret_name and url are required" }, 400);
+  }
+  if (response_mode !== undefined && response_mode !== "json" && response_mode !== "stream") {
+    return c.json({ error: "response_mode must be json or stream" }, 400);
+  }
+  const streaming = response_mode === "stream";
+  if (timeout_ms !== undefined && (typeof timeout_ms !== "number" || !Number.isFinite(timeout_ms) || timeout_ms <= 0)) {
+    return c.json({ error: "timeout_ms must be a positive number" }, 400);
+  }
+  if (method !== undefined && (typeof method !== "string" || !["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"].includes(method.toUpperCase()))) {
+    return c.json({ error: "Unsupported HTTP method" }, 400);
   }
 
   // Host only — see the note in _shared/audit.ts on why the rest of the
@@ -615,38 +630,76 @@ app.post("/proxy", async (c) => {
   const httpMethod = (method || "GET").toUpperCase();
   const hdrName = header_name || "Authorization";
   const hdrPrefix = header_prefix !== undefined ? header_prefix : "Bearer ";
-  const timeout = Math.min(timeout_ms || 30000, 60000);
+  const timeout = Math.trunc(Math.min(timeout_ms ?? (streaming ? 300000 : 30000), streaming ? 300000 : 60000));
 
-  const outHeaders: Record<string, string> = {
-    [hdrName]: `${hdrPrefix}${secretValue}`,
-  };
-
-  if (extra_headers && typeof extra_headers === "object") {
-    for (const [k, v] of Object.entries(extra_headers as Record<string, string>)) {
-      outHeaders[k] = v;
+  let outHeaders: Headers;
+  try {
+    outHeaders = new Headers(extra_headers);
+    // Case-insensitive replacement: extra headers cannot override the vault key.
+    outHeaders.set(hdrName, `${hdrPrefix}${secretValue}`);
+    if (reqBody !== undefined && !outHeaders.has("Content-Type")) {
+      outHeaders.set("Content-Type", "application/json");
     }
+  } catch {
+    return c.json({ error: "Invalid proxy headers" }, 400);
   }
 
-  if (reqBody && !outHeaders["Content-Type"]) {
-    outHeaders["Content-Type"] = "application/json";
-  }
-
+  const upstreamAbort = new AbortController();
+  const signal = AbortSignal.any([c.req.raw.signal, upstreamAbort.signal, AbortSignal.timeout(timeout)]);
   const fetchOptions: RequestInit = {
     method: httpMethod,
     headers: outHeaders,
     // Never forward a credential-bearing request to a redirect target that has
     // not gone through the proxy URL checks.
     redirect: "manual",
-    signal: AbortSignal.timeout(timeout),
+    signal,
   };
 
-  if (reqBody && ["POST", "PUT", "PATCH"].includes(httpMethod)) {
+  if (reqBody !== undefined && ["POST", "PUT", "PATCH", "DELETE"].includes(httpMethod)) {
     fetchOptions.body = JSON.stringify(reqBody);
   }
 
   try {
     const proxyRes = await fetch(url, fetchOptions);
     const contentType = proxyRes.headers.get("content-type") || "";
+    if (streaming) {
+      // A redirect body/Location can contain credentials. Never expose or follow it.
+      if (proxyRes.status >= 300 && proxyRes.status < 400 && proxyRes.status !== 304) {
+        await proxyRes.body?.cancel();
+        throw new Error("Upstream redirect refused");
+      }
+      const finishStream = async (outcome: ProxyStreamOutcome) => {
+        await Promise.allSettled([
+          supabase.from("secrets").update({
+            last_used_at: new Date().toISOString(),
+            use_count: (secret.use_count || 0) + 1,
+          }).eq("id", secret.id),
+          recordSecretAudit(audit, {
+            operation: "secret.use",
+            status: outcome === "success" && proxyRes.ok ? "success" : "error",
+            secretName: secret.name,
+            target: destinationHost,
+            reason: outcome !== "success" ? outcome : proxyRes.ok ? undefined : "upstream_http_error",
+          }),
+        ]);
+      };
+      // Forward only representation metadata, never cookies or provider headers.
+      const headers = new Headers({
+        "Content-Type": /^(text\/event-stream|application\/(json|[\w.+-]+\+json|x-ndjson|octet-stream))(;|$)/i.test(contentType)
+          ? contentType : "application/octet-stream",
+        "X-Content-Type-Options": "nosniff",
+        "X-Accel-Buffering": "no",
+      });
+      const retryAfter = proxyRes.headers.get("retry-after");
+      if (retryAfter) headers.set("Retry-After", retryAfter);
+      if (!proxyRes.body) {
+        await finishStream("success");
+        return new Response(null, { status: proxyRes.status, headers });
+      }
+      return new Response(secretProxyStream(
+        proxyRes.body, signal, () => upstreamAbort.abort(), finishStream,
+      ), { status: proxyRes.status, headers });
+    }
     let responseBody: unknown;
 
     if (contentType.includes("application/json")) {
@@ -677,8 +730,7 @@ app.post("/proxy", async (c) => {
       status_text: proxyRes.statusText,
       body: responseBody,
     });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : "Request failed";
+  } catch {
     // The credential did leave the process, so this is an event even though the
     // request failed. The upstream message stays out of the row.
     await recordSecretAudit(audit, {
@@ -688,7 +740,7 @@ app.post("/proxy", async (c) => {
       target: destinationHost,
       reason: "request_failed",
     });
-    return c.json({ error: `HTTP request failed: ${msg}` }, 502);
+    return c.json({ error: "Upstream HTTP request failed" }, 502);
   }
 });
 
@@ -895,6 +947,57 @@ app.post("/oauth-exchange", async (c) => {
     rotated: Boolean(existing),
     provider: plan.template.name,
   }, existing ? 200 : 201);
+});
+
+/**
+ * GET /api/playbooks/:guid/secrets/oauth-exchange?template_id=gmail
+ *
+ * What the consent flow needs to know before it opens a browser: which client
+ * id this playbook is configured with, and whether the client secret is already
+ * in the vault.
+ *
+ * The client id is resolved here rather than asked of the caller because it
+ * already lives in the MCP server's `transport_config.auth.client_id`, which is
+ * where federation reads it at call time. Asking the CLI for it every run would
+ * make the same value exist in two places and drift.
+ *
+ * It returns the client id in plain text, which is correct: a client id is
+ * public — it travels in the authorize URL the user's browser opens. The client
+ * secret is only ever reported as present or absent.
+ */
+app.get("/oauth-exchange", async (c) => {
+  const guid = c.req.param("guid");
+  if (!guid) return c.json({ error: "Missing playbook GUID" }, 400);
+
+  const user = await getAuthenticatedUser(c.req.raw);
+  const apiKey = !user ? await validateApiKey(c.req.raw, "secrets:read") : null;
+
+  const playbook = await getPlaybookByGuid(guid, user?.id ?? null, apiKey?.playbooks.id ?? null);
+  if (!playbook) return c.json({ error: "Playbook not found" }, 404);
+
+  const isOwner = user && playbook.user_id === user.id;
+  const isApiKeyForPlaybook = apiKey && apiKey.playbooks.id === playbook.id;
+  if (!isOwner && !isApiKeyForPlaybook) return c.json({ error: "Forbidden" }, 403);
+
+  const plan = planExchange(c.req.query("template_id"));
+  if (isPlanFailure(plan)) return c.json({ error: plan.error }, plan.status as 400);
+
+  const supabase = getServiceSupabase();
+  const [{ data: servers }, { data: secretRows }] = await Promise.all([
+    supabase.from("mcp_servers").select("transport_config").eq("playbook_id", playbook.id),
+    supabase.from("secrets").select("name").eq("playbook_id", playbook.id),
+  ]);
+  const stored = new Set((secretRows ?? []).map((row) => row.name));
+
+  return c.json({
+    template_id: plan.template.id,
+    provider: plan.template.name,
+    client_id: resolveConfiguredClientId(servers, plan.template),
+    client_secret_secret: plan.clientSecretName,
+    client_secret_present: plan.clientSecretName ? stored.has(plan.clientSecretName) : null,
+    refresh_secret: plan.refreshSecretName,
+    refresh_secret_present: stored.has(plan.refreshSecretName),
+  });
 });
 
 export { app };

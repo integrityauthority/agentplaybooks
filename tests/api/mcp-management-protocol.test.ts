@@ -1,5 +1,27 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GET, POST } from "@/app/api/mcp/manage/route";
+import { getAuthenticatedUser, validateUserApiKey } from "@/app/api/_shared/auth";
+
+vi.mock("@/app/api/_shared/auth", () => ({
+  getAuthenticatedUser: vi.fn(),
+  validateUserApiKey: vi.fn(),
+}));
+
+const mockValidateUserApiKey = vi.mocked(validateUserApiKey);
+const mockGetAuthenticatedUser = vi.mocked(getAuthenticatedUser);
+
+const authenticatedUserKey = {
+  id: "user-key-id",
+  user_id: "user-id",
+  key_hash: "hash",
+  key_prefix: "apb_live_test",
+  name: "test",
+  permissions: ["full"],
+  is_active: true,
+  expires_at: null,
+  last_used_at: null,
+  created_at: "2026-01-01T00:00:00.000Z",
+};
 
 function mcpRequest(body: Record<string, unknown>, headers: Record<string, string> = {}) {
   return new Request("http://localhost/api/mcp/manage", {
@@ -10,6 +32,63 @@ function mcpRequest(body: Record<string, unknown>, headers: Record<string, strin
 }
 
 describe("AgentPlaybooks management MCP transport", () => {
+  beforeEach(() => {
+    mockValidateUserApiKey.mockResolvedValue(authenticatedUserKey);
+    mockGetAuthenticatedUser.mockResolvedValue(null);
+  });
+
+  it("rejects unauthenticated keepalive requests", async () => {
+    mockValidateUserApiKey.mockResolvedValueOnce(null);
+
+    const response = await POST(mcpRequest({ id: 0, method: "ping" }));
+
+    expect(response.status).toBe(401);
+    expect(response.headers.get("WWW-Authenticate")).toContain(
+      "/.well-known/oauth-protected-resource/api/mcp/manage",
+    );
+    expect(await response.json()).toMatchObject({
+      id: null,
+      error: { code: -32001 },
+    });
+  });
+
+  it("rejects an unauthenticated body before attempting to parse it", async () => {
+    mockValidateUserApiKey.mockResolvedValueOnce(null);
+
+    const response = await POST(new Request("http://localhost/api/mcp/manage", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "not-json",
+    }));
+
+    expect(response.status).toBe(401);
+    expect(response.headers.get("WWW-Authenticate")).toContain("resource_metadata=");
+  });
+
+  it("does not build the management manifest without a user key", async () => {
+    mockValidateUserApiKey.mockResolvedValueOnce(null);
+
+    const response = await GET(new Request("http://localhost/api/mcp/manage", {
+      headers: { Accept: "application/json" },
+    }));
+
+    expect(response.status).toBe(401);
+    expect(response.headers.get("WWW-Authenticate")).toContain("resource_metadata=");
+  });
+
+  it("accepts a Supabase OAuth access token as the signed-in account", async () => {
+    mockValidateUserApiKey.mockResolvedValueOnce(null);
+    mockGetAuthenticatedUser.mockResolvedValueOnce({ id: "oauth-user" });
+
+    const response = await GET(new Request("http://localhost/api/mcp/manage", {
+      headers: { Authorization: "Bearer oauth-access-token" },
+    }));
+    const manifest = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(manifest._auth).toMatchObject({ type: "oauth2", actor: "oauth" });
+  });
+
   it("negotiates the current protocol version", async () => {
     const response = await POST(mcpRequest({
       id: 1,
@@ -43,11 +122,19 @@ describe("AgentPlaybooks management MCP transport", () => {
     const payload = await response.json();
     const tools = payload.result.tools as Array<{
       name: string;
+      description?: string;
       inputSchema: { properties?: Record<string, unknown>; required?: string[] };
+      annotations?: {
+        readOnlyHint?: boolean;
+        destructiveHint?: boolean;
+        idempotentHint?: boolean;
+        openWorldHint?: boolean;
+      };
     }>;
     const names = tools.map((tool) => tool.name);
 
     expect(new Set(names).size).toBe(names.length);
+    expect(names).toHaveLength(50);
     expect(names).toEqual(expect.arrayContaining([
       "list_playbooks",
       "create_playbook",
@@ -60,6 +147,18 @@ describe("AgentPlaybooks management MCP transport", () => {
       const tool = tools.find((candidate) => candidate.name === name)!;
       expect(tool.inputSchema.properties).toHaveProperty("playbook_id");
       expect(tool.inputSchema.required).toContain("playbook_id");
+      expect(tool.description).not.toContain("Target a playbook with playbook_id.");
+      expect(tool.annotations?.readOnlyHint).toBe(false);
+    }
+    for (const tool of tools) {
+      expect(tool.annotations, `${tool.name} missing annotations in tools/list`).toEqual(
+        expect.objectContaining({
+          readOnlyHint: expect.any(Boolean),
+          destructiveHint: expect.any(Boolean),
+          idempotentHint: expect.any(Boolean),
+          openWorldHint: expect.any(Boolean),
+        }),
+      );
     }
   });
 

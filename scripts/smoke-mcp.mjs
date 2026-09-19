@@ -129,6 +129,24 @@ async function checkUnknownVersionIsNotRejected() {
   );
 }
 
+async function checkToolSchemasAreStrictClientSafe() {
+  // Hermes validates the whole ListToolsResult with pydantic: one tool whose
+  // outputSchema is a top-level array and the client rejects everything —
+  // "3 validation errors", connection parked, zero tools.
+  const { response, json } = await request(`/api/mcp/${PUBLIC_GUID}`, rpc("tools/list", { version: "2025-06-18", modern: false }));
+  const tools = json?.result?.tools ?? [];
+  const offenders = tools
+    .filter((tool) =>
+      tool.inputSchema?.type !== "object"
+      || (tool.outputSchema !== undefined && tool.outputSchema?.type !== "object"))
+    .map((tool) => tool.name);
+  record(
+    "every advertised tool schema survives a strict client",
+    response.status === 200 && tools.length > 0 && offenders.length === 0,
+    offenders.length ? `offenders: ${offenders.slice(0, 5).join(", ")}` : `${tools.length} tools clean`,
+  );
+}
+
 async function checkUnknownMethod() {
   const { response, json } = await request(`/api/mcp/${PUBLIC_GUID}`, rpc("does/not/exist"));
   record(
@@ -188,6 +206,40 @@ async function checkPrivatePlaybookChallenge() {
     `HTTP ${listing.response.status}`,
   );
 
+  // A bare key with no `Bearer` scheme is what a client writes when its config
+  // maps header names to values. Demanding the scheme made a correct key
+  // unrecognisable, and the refusal then blamed a permission — so the shape of
+  // this answer is the check: 403 about permissions means the key was parsed.
+  const bareKey = await request(`/api/mcp/${PRIVATE_GUID}`, {
+    ...rpc("tools/list", { version: "2025-06-18", modern: false }),
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json, text/event-stream",
+      Authorization: "apb_smoke_not_a_real_key",
+    },
+  });
+  record(
+    "a bare key in Authorization is parsed, not reported as malformed",
+    bareKey.response.status === 403 && /memory:read/.test(bareKey.json?.error?.message ?? ""),
+    `HTTP ${bareKey.response.status}, ${bareKey.json?.error?.message?.slice(0, 60) ?? "no message"}`,
+  );
+
+  // And a placeholder the client never expanded must not be diagnosed as a
+  // permission problem, which sends the operator to edit settings that are fine.
+  const placeholder = await request(`/api/mcp/${PRIVATE_GUID}`, {
+    ...rpc("tools/list", { version: "2025-06-18", modern: false }),
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json, text/event-stream",
+      Authorization: "${APBKS_KEY_SMOKE}",
+    },
+  });
+  record(
+    "an unexpanded ${VAR} is named as such, not as a missing permission",
+    /unexpanded variable reference/.test(placeholder.json?.error?.message ?? ""),
+    `HTTP ${placeholder.response.status}, ${placeholder.json?.error?.message?.slice(0, 60) ?? "no message"}`,
+  );
+
   // The handshake must not leak the playbook's own identity to a caller that
   // has not authenticated.
   const info = handshake.json?.result?.serverInfo;
@@ -206,6 +258,7 @@ for (const check of [
   checkModernDiscovery,
   checkLegacyHandshakeStillNegotiates,
   checkUnknownVersionIsNotRejected,
+  checkToolSchemasAreStrictClientSafe,
   checkUnknownMethod,
   checkConnectionTestRouteIsReachable,
   checkPrivatePlaybookChallenge,

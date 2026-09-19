@@ -40,6 +40,8 @@ Substitute your variant for `apb` in the commands below.
 | `apb sync --global [--include-vendored]` | Same plan across the user's home stores (`~/.cursor/skills`, `~/.claude/skills`, the Hermes profile) instead of one project. Skills only | Plan only without `--apply` |
 | `apb login [--url=<base>]` | Store a user API key (`apb_...`) for a remote; reads `AGENTPLAYBOOKS_API_KEY` first | `~/.agentplaybooks/credentials.json` |
 | `apb playbooks [--json]` | List remote playbooks the key can access | Never |
+| `apb connect --account [path] [--target=<types>]` | Connect an agent to the account-management MCP endpoint using `${AGENTPLAYBOOKS_API_KEY}` | Plan only without `--apply` |
+| `apb connect <guid>[,<guid>...] [path]` | Connect one or more scoped playbook MCP endpoints in one config update | Plan only without `--apply` |
 | `apb pull <id\|guid> [path] [--apply]` | Download a playbook's instructions into `AGENTS.md`, skills into `.agents/skills/`, and MCP servers into `.agents/mcp.json`, then link the project | With `--apply` |
 | `apb push [path] [--apply]` | Upload local instructions, skills, MCP servers, and the manifest to the linked (or a new) remote playbook | With `--apply` |
 | `apb push --global [--apply]` | Upload this machine's own skills as a workstation playbook. MCP configuration is never uploaded | With `--apply` |
@@ -76,6 +78,24 @@ Substitute your variant for `apb` in the commands below.
 - **"Set this machine up from our team playbook"** → `apb pull <guid> --apply`,
   then `apb sync --apply`. If the project has no target yet, sync lists the
   agent tools it detected for this user; pass them via `--target`.
+- **"Connect my whole AgentPlaybooks account"** → run
+  `apb connect --account --target=<type>`, show the plan, then run it with
+  `--apply`. The generated config contains `${AGENTPLAYBOOKS_API_KEY}`, never
+  the key. Set that variable before starting or restarting the agent.
+- **"Work with my hosted playbooks"** → use the bundled
+  `agentplaybooks-account` MCP connection. Start with `list_playbooks`, then
+  pass the selected `playbook_id` to playbook-scoped tools. The connection
+  covers versioned skills, memory and task graphs, workflow runs, collaborative
+  canvas documents, MCP/OpenAPI tools, and encrypted secrets; do not imply it
+  is only a sync or listing API.
+- **"Call an API without revealing its key"** → use `list_secrets` to discover
+  names, then `use_secret` for GET/HEAD. Use `use_secret_write` for
+  POST/PUT/PATCH/DELETE only after the user approves the external mutation.
+  Both inject the credential server-side and must never reveal or request its
+  value. The account MCP form also needs the target `playbook_id`.
+- **"Connect these playbooks only"** → pass a comma-separated GUID list to
+  `apb connect`. The CLI creates a separate, stable MCP entry for each and
+  merges them into the target configuration atomically.
 - **"Which credentials does this playbook need?"** → run
   `apb secrets status --json` (or read `spec.secrets` in `agentplaybook.json` if
   the project has no playbook key). It reports names and state only. Tell the
@@ -100,6 +120,13 @@ Substitute your variant for `apb` in the commands below.
   environment over pasting keys into the terminal. `push` refuses to upload
   content that looks like it contains hard-coded credentials — fix the finding
   instead of working around it.
+- If the bundled Codex MCP connection reports an authentication error, run
+  `codex mcp login agentplaybooks-account` to start the browser OAuth flow.
+  `apb login` alone does not configure the bundled MCP connection. For
+  headless/CI use only, put `bearer_token_env_var =
+  "AGENTPLAYBOOKS_API_KEY"` under `[mcp_servers.agentplaybooks-account]` in
+  Codex configuration and fully restart it. Never ask the user to paste the key
+  into chat.
 - `apb secrets status` is safe to run. **Do not run `apb secrets push` for the
   user**: storing a credential is theirs to confirm, and the command needs a
   value on stdin that you must never hold or generate. Tell them the exact

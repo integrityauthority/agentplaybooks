@@ -78,13 +78,13 @@ describe("private playbook refusal", () => {
     const refusal = privateAccessRefusal(new Request("http://localhost/api/mcp/x"));
 
     expect(refusal.status).toBe(401);
-    // No challenge: a Bearer challenge is how OAuth resources announce
-    // themselves, and an OAuth-capable client would start a flow we do not have.
-    expect(refusal.headers["WWW-Authenticate"]).toBeUndefined();
+    expect(refusal.headers["WWW-Authenticate"]).toContain(
+      "/.well-known/oauth-protected-resource/api/mcp/x",
+    );
     expect(refusal.message).toContain("private");
   });
 
-  it("tells a rejected credential which permission it lacks, without a challenge", () => {
+  it("tells a rejected credential which permission it lacks without restarting OAuth", () => {
     const refusal = privateAccessRefusal(new Request("http://localhost/api/mcp/x", {
       headers: { Authorization: "Bearer apb_wrong" },
     }));
