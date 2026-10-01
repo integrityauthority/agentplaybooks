@@ -27,9 +27,33 @@ export const docsEntries: DocEntry[] = [
     section: "guides",
   },
   {
+    slug: "hermes-memory",
+    title: "Hermes Memory Provider",
+    description: "Native memory setup, private profiles, and shared knowledge",
+    section: "guides",
+  },
+  {
+    slug: "hermes-portable-agents",
+    title: "AgentPlaybooks Tools in Hermes",
+    description: "Connect playbook skills, MCP/OpenAPI tools, and credentials",
+    section: "guides",
+  },
+  {
     slug: "cli",
     title: "CLI & Editor Plugins",
     description: "Doctor, sync, pull/push, and the Claude Code plugin",
+    section: "guides",
+  },
+  {
+    slug: "portable-agent-backups",
+    title: "Cross-platform Agent Backups",
+    description: "Portable AI agent configuration, Agent Skills migration, and private versioned backups",
+    section: "guides",
+  },
+  {
+    slug: "release-distribution",
+    title: "Release Distribution",
+    description: "MCP registry, plugin stores, skill discovery, Hermes memory, npm, and release checks",
     section: "guides",
   },
   {

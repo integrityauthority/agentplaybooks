@@ -15,7 +15,8 @@ Your agent setup stays in sync across Claude, ChatGPT, Cursor, Codex, Gemini, lo
 - Skills: JSON schema definitions plus optional SKILL.md content
 - Skill attachments: secure file storage for code, prompts, and docs
 - MCP servers: tools and resources in Model Context Protocol format
-- Memory: key-value store with tags and descriptions
+- Memory: key-value store with tags and descriptions, with a [native Hermes memory provider](https://agentplaybooks.ai/docs/hermes-memory)
+- Hermes Tools plugin: [connect playbook skills, MCP/OpenAPI tools, and credentials](https://agentplaybooks.ai/docs/hermes-portable-agents)
 - Canvas: versioned markdown work documents, scoped to a playbook run, so several
   teams can execute the same playbook without sharing work products
 
@@ -30,11 +31,16 @@ Your agent setup stays in sync across Claude, ChatGPT, Cursor, Codex, Gemini, lo
 
 **Getting it into your tools**
 
-- CLI + Claude Code plugin: audit your local agent config, then sync one playbook
+- CLI + portable Agent Plugin: audit your local agent config, then sync one playbook
   to Claude Code, Cursor, ChatGPT/Codex, Google Antigravity, Grok Bot and Hermes
+- Agent Plugins 1.0: install the project plugin or export a single playbook as
+  `plugin.json`, `mcp.json`, and complete Agent Skills directories. Compatible
+  MCP hosts can also discover hosted playbook skills through the MCP Skills extension.
+- Private, versioned central backups are separate from installable plugin exports;
+  packages contain no vault secret values.
 - Publishing: a public playbook's skills are served as plain markdown over HTTP
   at `/.well-known/skills/` — installable from a URL, no registry, no sign-up
-- Export formats: JSON, OpenAPI, MCP, Anthropic, Markdown
+- Export formats: Agent Plugin ZIP, JSON, OpenAPI, MCP, Anthropic, Markdown
 
 **Working with other people**
 
@@ -62,6 +68,7 @@ Your agent setup stays in sync across Claude, ChatGPT, Cursor, Codex, Gemini, lo
 
 - Website: https://agentplaybooks.ai — the canonical host; https://apbks.com is a short domain for links
 - Docs: https://agentplaybooks.ai/docs
+- [Release distribution checklist](https://agentplaybooks.ai/docs/release-distribution): npm, MCP registry, plugin stores, skill discovery, Hermes memory, and verification
 - GitHub: https://github.com/matebenyovszky/agentplaybooks
 
 ## Getting Started
@@ -80,6 +87,29 @@ git clone https://github.com/matebenyovszky/agentplaybooks.git
 cd agentplaybooks
 npm install
 ```
+
+### Starters
+
+Portable playbooks under [`examples/`](examples/) — persona, instructions,
+skills, MCP, memory, and vault in a tree you control. Small MIT examples you
+can clone or `cp -R`. Not a marketplace.
+
+| Starter | One-liner |
+|---|---|
+| [`coding-agent-baseline`](examples/coding-agent-baseline/) | Coding-agent playbook: instructions, two skills, safe MCP stub |
+| [`doctor-drift-demo`](examples/doctor-drift-demo/) | Review playbook with host-folder drift; the portable store stays canonical |
+| [`skills-only-starter`](examples/skills-only-starter/) | Smallest playbook: three skills + instructions; no MCP |
+| [`cursor-hermes-starter`](examples/cursor-hermes-starter/) | Playbook with persona, instructions, and skills for Cursor and Hermes hosts |
+
+Install into a host (optional `doctor` check, then `sync`):
+
+```bash
+npx @agentplaybooks/cli@latest doctor examples/coding-agent-baseline
+npx @agentplaybooks/cli@latest sync examples/coding-agent-baseline --target=claude,cursor --apply
+```
+
+See [examples/README.md](examples/README.md), the [CLI docs](https://agentplaybooks.ai/docs/cli),
+and the [Agent Plugins spec](https://agent-plugins.org/specification).
 
 ### Environment Variables
 
@@ -124,20 +154,26 @@ npx wrangler deploy
 ## CLI, ChatGPT/Codex Plugin, and Claude Code Plugin (`packages/cli`)
 
 `agentplaybooks doctor <project>` audits local agent configuration
-(instructions, Agent Skills, MCP servers, likely hard-coded secrets, drift)
+(instructions, Agent Skills, custom agents, MCP servers, likely hard-coded secrets, drift)
 and `agentplaybooks sync <project>` creates the canonical
 `agentplaybook.json` plus the platform files missing from enabled targets:
-Claude Code (`.claude/skills` + `.mcp.json`), Cursor (`.cursor/skills` +
-`.cursor/mcp.json`), ChatGPT/Codex (`.codex/skills` + `.codex/config.toml`),
-Google Antigravity (`.agents/skills`), Grok Bot (`.agents/skills`, which it
+Claude Code, Cursor, ChatGPT/Codex, GitHub Copilot, Gemini CLI, Google
+Antigravity (`.agents/skills`), Grok Bot (`.agents/skills`, which it
 discovers natively alongside `AGENTS.md`), and Hermes Agent (`.agents/skills`
 registered in `~/.hermes/config.yaml`, plus that file's `mcp_servers:` and
 `SOUL.md`).
+`agentplaybooks plugin export|import` round-trips Agent Plugins 1.0 packages;
+the only manifest extension carries secret references and bindings, never
+secret values.
 `login` / `playbooks` / `pull` / `push` synchronize skills, MCP servers, and the
-manifest with a hosted playbook using a user API key; secret values never move,
-only the references the playbook declares in `spec.secrets`. All mutating
-commands are plan-only until `--apply`. See
-[packages/cli/README.md](packages/cli/README.md).
+manifest with a hosted playbook using a user API key. `push` also creates a
+private, versioned cross-platform AI agent configuration backup, including
+complete Agent Skills folders and portable custom agents. `backups` lists
+revisions; `pull --snapshot` can recover an earlier one. Secret values never
+move, only references declared in `spec.secrets`. Mutating commands show a
+plan first and require `--apply`, `--yes`, or interactive confirmation where
+supported. See [packages/cli/README.md](packages/cli/README.md) and the
+[backup and migration guide](public/docs/portable-agent-backups.md).
 
 The same package is a ChatGPT/Codex plugin (skill + account MCP) and a Claude
 Code / Claude Cowork plugin (skill + slash commands + account MCP). Both expose
@@ -440,6 +476,7 @@ agentplaybooks/
     cli/                   # AgentPlaybooks CLI + Claude Code plugin
   .claude-plugin/          # Plugin marketplace manifest
   docs/                    # Contributor-facing notes
+  examples/                # Starter playbooks (fork/clone/sync)
   public/
     blog/  docs/           # Markdown served to the client
   schemas/                 # JSON schemas (agentplaybook.json, …)
